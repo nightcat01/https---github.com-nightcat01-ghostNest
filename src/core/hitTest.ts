@@ -1,11 +1,31 @@
-import type { CharacterTouchPart } from "./types.js";
+import type { CharacterTouchPart, CharacterTouchArea } from "./types.js";
 
 /**
  * sprite 내부 클릭 좌표를 캐릭터 부위 ID로 변환합니다.
+ * customHitAreas가 제공되면 이를 우선적으로 검사합니다.
  */
-export function getCharacterTouchPart(clientX: number, clientY: number, rect: DOMRect): CharacterTouchPart {
+export function getCharacterTouchPart(
+  clientX: number,
+  clientY: number,
+  rect: DOMRect,
+  customHitAreas?: Partial<Record<CharacterTouchPart, CharacterTouchArea>>
+): CharacterTouchPart {
   const relativeX = (clientX - rect.left) / rect.width;
   const relativeY = (clientY - rect.top) / rect.height;
+
+  if (customHitAreas) {
+    for (const [part, area] of Object.entries(customHitAreas)) {
+      if (
+        area &&
+        relativeX >= area.minX &&
+        relativeX <= area.maxX &&
+        relativeY >= area.minY &&
+        relativeY <= area.maxY
+      ) {
+        return part as CharacterTouchPart;
+      }
+    }
+  }
 
   if (relativeY < 0.36) {
     return "head";

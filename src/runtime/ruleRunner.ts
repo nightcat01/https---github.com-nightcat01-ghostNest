@@ -1,0 +1,115 @@
+import type {
+  RuntimeAction,
+  RuntimeCondition,
+  RuntimeEventHandler,
+  RuntimeEventMap,
+  RuntimeEventName,
+  RuntimeFeatureOptions,
+  RuntimeRule,
+  RuntimeState,
+} from "../core/types.js";
+
+type RuntimeEventBus = {
+  on: <TEventName extends RuntimeEventName>(
+    eventName: TEventName,
+    handler: RuntimeEventHandler<TEventName>,
+  ) => () => void;
+};
+
+type RuleRunnerOptions = {
+  eventBus: RuntimeEventBus;
+  rules: RuntimeRule[];
+  features: RuntimeFeatureOptions;
+  state: RuntimeState;
+  ruleCooldowns: Map<string, number>;
+  runActions: (actions: RuntimeAction[]) => void | Promise<void>;
+  setLastEventLabel: (eventName: RuntimeEventName) => void;
+};
+
+const ruleEventNames = [
+  "runtime:ready",
+  "character:click",
+  "character:double_click",
+  "character:right_click",
+  "character:touch",
+  "character:idle",
+  "area:hover",
+  "command:hover",
+  "character:randomPrompt",
+  "command:line",
+  "command:fortune",
+] satisfies RuntimeEventName[];
+
+function matchesRuleWhen(rule: RuntimeRule, payload: RuntimeEventMap[RuntimeEventName]) {
+  if (!rule.when) {
+    return true;
+  }
+
+  return Object.entries(rule.when).every(([key, value]) => {
+    return (payload as Record<string, unknown>)[key] === value;
+  });
+}
+
+function createConditionChecker({
+  features,
+  state,
+  ruleCooldowns,
+}: Pick<RuleRunnerOptions, "features" | "state" | "ruleCooldowns">) {
+  return function passesConditions(conditions: RuntimeCondition[] = []) {
+    const now = Date.now();
+    const passedCooldowns: Array<{ key: string; time: number }> = [];
+
+    for (const condition of conditions) {
+      switch (condition.type) {
+        case "feature_enabled":
+          if (!features[condition.feature]) {
+            return false;
+          }
+          break;
+        case "not_hidden":
+          if (state.isHidden) {
+            return false;
+          }
+          break;
+        case "mode_is":
+          if (state.mode !== condition.state) {
+            return false;
+          }
+          break;
+        case "cooldown":
+          if (now - (ruleCooldowns.get(condition.key) ?? 0) < condition.duration) {
+            return false;
+          }
+
+          passedCooldowns.push({ key: condition.key, time: now });
+          break;
+      }
+    }
+
+    passedCooldowns.forEach(({ key, time }) => ruleCooldowns.set(key, time));
+    return true;
+  };
+}
+
+export function bindRuntimeRuleEvents(options: RuleRunnerOptions) {
+  const { eventBus, rules, runActions, setLastEventLabel } = options;
+  const passesConditions = createConditionChecker(options);
+
+  function runRules<TEventName extends RuntimeEventName>(
+    eventName: TEventName,
+    payload: RuntimeEventMap[TEventName],
+  ) {
+    setLastEventLabel(eventName);
+    rules
+      .filter((rule) => rule.event === eventName)
+      .filter((rule) => matchesRuleWhen(rule, payload))
+      .filter((rule) => passesConditions(rule.conditions))
+      .forEach((rule) => {
+        void runActions(rule.actions);
+      });
+  }
+
+  ruleEventNames.forEach((eventName) => {
+    eventBus.on(eventName, (payload) => runRules(eventName, payload));
+  });
+}

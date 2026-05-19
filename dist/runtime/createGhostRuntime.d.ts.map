@@ -1,1 +1,1 @@
-{"version":3,"file":"createGhostRuntime.d.ts","sourceRoot":"","sources":["../../src/runtime/createGhostRuntime.ts"],"names":[],"mappings":"AAIA,OAAO,KAAK,EAKV,YAAY,EACZ,mBAAmB,EASpB,MAAM,kBAAkB,CAAC;AAkV1B;;GAEG;AACH,wBAAgB,kBAAkB,CAAC,OAAO,EAAE,mBAAmB,GAAG,YAAY,CAiqB7E"}
+{"version":3,"file":"createGhostRuntime.d.ts","sourceRoot":"","sources":["../../src/runtime/createGhostRuntime.ts"],"names":[],"mappings":"AAMA,OAAO,KAAK,EAMV,YAAY,EACZ,mBAAmB,EASpB,MAAM,kBAAkB,CAAC;AA0a1B;;GAEG;AACH,wBAAgB,kBAAkB,CAAC,OAAO,EAAE,mBAAmB,GAAG,YAAY,CAy8B7E"}

@@ -2,6 +2,8 @@ import { createDialogueEngine } from "../core/dialogueEngine.js";
 import { createEventBus } from "../core/eventBus.js";
 import { getCharacterTouchPart } from "../core/hitTest.js";
 import { createRuntimeState } from "../core/runtimeState.js";
+import { createLocalStorageAdapter } from "../core/storageAdapter.js";
+import { createExternalEventBridge } from "../core/eventBridge.js";
 const defaultTiming = {
     idleDelay: 18000,
     randomPromptDelay: 14000,
@@ -98,6 +100,16 @@ function createDefaultRules(timing) {
             actions: [
                 { type: "touch_interaction" },
                 { type: "change_expression", expression: "thinking", clearTouchedPart: true },
+                { type: "speak_text", text: "앗, 거기는 왜 자꾸 누르시나요?" },
+                { type: "log", label: "character:double_click" },
+            ],
+        },
+        {
+            id: "character.right_click.management_menu",
+            event: "character:right_click",
+            actions: [
+                { type: "touch_interaction" },
+                { type: "change_expression", expression: "thinking", clearTouchedPart: true },
                 { type: "speak_text", text: "관리 메뉴를 열었어요. 필요한 동작을 골라주세요." },
                 {
                     type: "open_management_menu",
@@ -117,6 +129,65 @@ function createDefaultRules(timing) {
                             actions: [
                                 { type: "call_plugin", pluginId: "fortune" },
                                 { type: "log", label: "management.draw_fortune" },
+                            ],
+                        },
+                        {
+                            id: "weather",
+                            label: "날씨",
+                            actions: [
+                                { type: "call_plugin", pluginId: "weather" },
+                                { type: "log", label: "management.weather" },
+                            ],
+                        },
+                        {
+                            id: "system-info",
+                            label: "시스템 정보",
+                            actions: [
+                                { type: "call_plugin", pluginId: "system_info" },
+                                { type: "log", label: "management.system_info" },
+                            ],
+                        },
+                        {
+                            id: "minigame",
+                            label: "가위바위보",
+                            children: [
+                                {
+                                    id: "minigame-scissors",
+                                    label: "가위",
+                                    actions: [
+                                        { type: "call_plugin", pluginId: "minigame_가위" },
+                                        { type: "log", label: "management.minigame.scissors" },
+                                    ]
+                                },
+                                {
+                                    id: "minigame-rock",
+                                    label: "바위",
+                                    actions: [
+                                        { type: "call_plugin", pluginId: "minigame_바위" },
+                                        { type: "log", label: "management.minigame.rock" },
+                                    ]
+                                },
+                                {
+                                    id: "minigame-paper",
+                                    label: "보",
+                                    actions: [
+                                        { type: "call_plugin", pluginId: "minigame_보" },
+                                        { type: "log", label: "management.minigame.paper" },
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            id: "timer-3m",
+                            label: "3분 타이머",
+                            actions: [
+                                { type: "call_plugin", pluginId: "timer" },
+                                { type: "start_timer", timer: "cup_ramen", duration: 180000, actions: [
+                                        { type: "show_notification", title: "타이머 완료", message: "3분이 지났어요!" },
+                                        { type: "play_animation", animation: "jump", duration: 500 },
+                                        { type: "speak_text", text: "3분이 지났어요! 얼른 확인해보세요." }
+                                    ] },
+                                { type: "log", label: "management.start_timer" },
                             ],
                         },
                         {
@@ -170,9 +241,28 @@ function createDefaultRules(timing) {
                                 { type: "log", label: "management.hide" },
                             ],
                         },
+                        {
+                            id: "hitbox-editor",
+                            label: "[개발자] 히트박스 설정",
+                            actions: [
+                                { type: "close_management_menu" },
+                                { type: "open_ui", target: "hitbox_editor" },
+                                { type: "log", label: "management.open_hitbox_editor" },
+                            ],
+                        },
+                        {
+                            id: "close",
+                            label: "나가기",
+                            actions: [
+                                { type: "close_management_menu" },
+                                { type: "change_expression", expression: "neutral" },
+                                { type: "speak_text", text: "메뉴를 닫을게요." },
+                                { type: "log", label: "management.close" },
+                            ]
+                        },
                     ],
                 },
-                { type: "log", label: "character:double_click.management_menu" },
+                { type: "log", label: "character:right_click.management_menu" },
             ],
         },
         ...Object.entries(touchPartConfig).map(([part, config]) => ({
@@ -326,6 +416,12 @@ export function createGhostRuntime(options) {
         balloonActionMenu: optionalElement(options.selectors.balloonActionMenu),
         eventLog: requiredElement(options.selectors.eventLog),
         menuButtons: document.querySelectorAll(options.selectors.menuButtons),
+        hitboxEditor: optionalElement(options.selectors.hitboxEditor),
+        hitboxEditorAdd: optionalElement(options.selectors.hitboxEditorAdd),
+        hitboxEditorClose: optionalElement(options.selectors.hitboxEditorClose),
+        hitboxEditorBody: optionalElement(options.selectors.hitboxEditorBody),
+        hitboxEditorCopy: optionalElement(options.selectors.hitboxEditorCopy),
+        restoreBadge: optionalElement(options.selectors.restoreBadge),
         observeAreas: document.querySelectorAll(options.selectors.observeAreas),
         statusMode: optionalElement(options.selectors.statusMode),
         statusExpression: optionalElement(options.selectors.statusExpression),
@@ -338,7 +434,8 @@ export function createGhostRuntime(options) {
     const eventBus = createEventBus();
     const pluginRegistry = new Map(options.plugins?.map((plugin) => [plugin.id, plugin]) ?? []);
     const rules = [...createDefaultRules(timing), ...(options.rules ?? [])];
-    const dialogue = createDialogueEngine({
+    const storageAdapter = options.storageAdapter ?? createLocalStorageAdapter(`ghostNest:${options.character.profile.id}`);
+    const dialogue = options.dialogueEngine ?? createDialogueEngine({
         profile: options.character.profile,
         lines: options.character.lines,
     });
@@ -473,10 +570,11 @@ export function createGhostRuntime(options) {
         return document.querySelector(`[data-runtime-ui="${target}"]`);
     }
     /**
-     * localStorage에 저장할 때 쓰는 런타임 전용 키를 만듭니다.
+     * localStorage 기반 코드는 제거되었고 storageAdapter를 사용합니다.
+     * 필요 시 런타임에서 저장소 네임스페이스를 관리하기 위해 사용할 수 있습니다.
      */
     function getStorageKey(key) {
-        return `ghostNest:${options.character.profile.id}:${key}`;
+        return key;
     }
     /**
      * 말풍선 내부에 관리 메뉴 버튼을 렌더링합니다.
@@ -520,13 +618,13 @@ export function createGhostRuntime(options) {
     /**
      * 데이터화된 런타임 액션을 실제 UI/상태 변경으로 실행합니다.
      */
-    function runAction(action) {
+    async function runAction(action) {
         switch (action.type) {
             case "speak":
-                renderSpeech(dialogue.line(action.category));
+                renderSpeech(await dialogue.line(action.category));
                 return;
             case "speak_text":
-                renderSpeech(dialogue.custom(action.text));
+                renderSpeech(await dialogue.custom(action.text));
                 return;
             case "change_expression":
                 state.expression = action.expression;
@@ -547,16 +645,30 @@ export function createGhostRuntime(options) {
                 {
                     const plugin = pluginRegistry.get(action.pluginId);
                     if (!plugin) {
-                        renderSpeech(dialogue.custom(`아직 '${action.pluginId}' 기능은 연결되어 있지 않아요.`));
+                        renderSpeech(await dialogue.custom(`아직 '${action.pluginId}' 기능은 연결되어 있지 않아요.`));
                         return;
                     }
-                    const result = plugin.execute();
-                    if (result.expression) {
-                        state.expression = result.expression;
+                    // 플러그인 로딩 상태 표시
+                    const originalExpression = state.expression;
+                    state.expression = "thinking";
+                    renderCharacterState();
+                    try {
+                        const result = await plugin.execute();
+                        if (result.expression) {
+                            state.expression = result.expression;
+                        }
+                        else {
+                            state.expression = originalExpression;
+                        }
                         state.lastTouchedPart = null;
                         renderCharacterState();
+                        renderSpeech(await dialogue.custom(`${result.title}. ${result.message}`));
                     }
-                    renderSpeech(dialogue.custom(`${result.title}. ${result.message}`));
+                    catch (err) {
+                        state.expression = "surprised";
+                        renderCharacterState();
+                        renderSpeech(await dialogue.custom(`'${action.pluginId}' 기능 실행 중 문제가 발생했어요.`));
+                    }
                     return;
                 }
             case "log":
@@ -611,15 +723,14 @@ export function createGhostRuntime(options) {
                 return;
             case "save_data":
                 state.data[action.key] = action.value;
-                window.localStorage.setItem(getStorageKey(action.key), JSON.stringify(action.value));
+                await storageAdapter.set(action.key, action.value);
                 return;
             case "load_data":
                 {
-                    const rawValue = window.localStorage.getItem(getStorageKey(action.key));
-                    const value = rawValue ? JSON.parse(rawValue) : null;
+                    const value = await storageAdapter.get(action.key);
                     state.data[action.saveTo ?? action.key] = value;
                     if (action.speak) {
-                        renderSpeech(dialogue.custom(value === null ? "저장된 값이 아직 없어요." : String(value)));
+                        renderSpeech(await dialogue.custom(value === null ? "저장된 값이 아직 없어요." : String(value)));
                     }
                 }
                 return;
@@ -629,7 +740,7 @@ export function createGhostRuntime(options) {
                     new Notification(action.title, { body: action.message });
                     return;
                 }
-                renderSpeech(dialogue.custom(`${action.title}. ${action.message}`));
+                renderSpeech(await dialogue.custom(`${action.title}. ${action.message}`));
                 return;
             case "start_timer":
                 {
@@ -679,8 +790,10 @@ export function createGhostRuntime(options) {
     /**
      * 여러 런타임 액션을 순서대로 실행합니다.
      */
-    function runActions(actions) {
-        actions.forEach((action) => runAction(action));
+    async function runActions(actions) {
+        for (const action of actions) {
+            await runAction(action);
+        }
     }
     /**
      * 이벤트 payload가 rule의 when 조건과 일치하는지 확인합니다.
@@ -741,6 +854,7 @@ export function createGhostRuntime(options) {
     eventBus.on("runtime:ready", (payload) => runRules("runtime:ready", payload));
     eventBus.on("character:click", (payload) => runRules("character:click", payload));
     eventBus.on("character:double_click", (payload) => runRules("character:double_click", payload));
+    eventBus.on("character:right_click", (payload) => runRules("character:right_click", payload));
     eventBus.on("character:touch", (payload) => runRules("character:touch", payload));
     eventBus.on("character:idle", (payload) => runRules("character:idle", payload));
     eventBus.on("area:hover", (payload) => runRules("area:hover", payload));
@@ -748,17 +862,36 @@ export function createGhostRuntime(options) {
     eventBus.on("character:randomPrompt", (payload) => runRules("character:randomPrompt", payload));
     eventBus.on("command:line", (payload) => runRules("command:line", payload));
     eventBus.on("command:fortune", (payload) => runRules("command:fortune", payload));
-    eventBus.on("command:hide", () => {
+    eventBus.on("command:hide", async () => {
         touchInteraction();
         state.isHidden = !state.isHidden;
         elements.stage.classList.toggle("is-hidden", state.isHidden);
+        if (elements.restoreBadge) {
+            elements.restoreBadge.hidden = !state.isHidden;
+        }
         if (state.isHidden) {
-            renderSpeech(dialogue.line("onHide"));
+            renderSpeech(await dialogue.line("onHide"));
             addLog("character:hide");
             return;
         }
-        renderSpeech(dialogue.line("onShow"));
+        renderSpeech(await dialogue.line("onShow"));
         addLog("character:show");
+    });
+    if (elements.restoreBadge) {
+        const handleRestoreClick = () => {
+            eventBus.emit("command:hide");
+        };
+        elements.restoreBadge.addEventListener("click", handleRestoreClick);
+        cleanupCallbacks.push(() => elements.restoreBadge?.removeEventListener("click", handleRestoreClick));
+    }
+    // 컨텍스트 메뉴(우클릭) 이벤트 처리
+    const handleContextMenu = (event) => {
+        event.preventDefault();
+        eventBus.emit("character:right_click");
+    };
+    elements.stage.addEventListener("contextmenu", handleContextMenu);
+    cleanupCallbacks.push(() => {
+        elements.stage.removeEventListener("contextmenu", handleContextMenu);
     });
     /**
      * 캐릭터 sprite 클릭 좌표를 부위 이벤트로 변환합니다.
@@ -769,11 +902,11 @@ export function createGhostRuntime(options) {
             return;
         }
         if (event.detail >= 2) {
-            const part = getCharacterTouchPart(event.clientX, event.clientY, elements.sprite.getBoundingClientRect());
+            const part = getCharacterTouchPart(event.clientX, event.clientY, elements.sprite.getBoundingClientRect(), options.character.assets?.hitAreas);
             eventBus.emit("character:double_click", { part });
             return;
         }
-        const part = getCharacterTouchPart(event.clientX, event.clientY, elements.sprite.getBoundingClientRect());
+        const part = getCharacterTouchPart(event.clientX, event.clientY, elements.sprite.getBoundingClientRect(), options.character.assets?.hitAreas);
         eventBus.emit("character:touch", { part });
     };
     elements.sprite.addEventListener("click", handleSpriteClick);
@@ -813,6 +946,19 @@ export function createGhostRuntime(options) {
             areaElement.removeEventListener("focusin", emitAreaHover);
         });
     });
+    document.querySelectorAll("[data-plugin]").forEach((button) => {
+        const pluginId = button.dataset.plugin;
+        if (!pluginId)
+            return;
+        const handlePluginClick = () => {
+            touchInteraction();
+            runAction({ type: "call_plugin", pluginId });
+        };
+        button.addEventListener("click", handlePluginClick);
+        cleanupCallbacks.push(() => {
+            button.removeEventListener("click", handlePluginClick);
+        });
+    });
     const idleTimer = window.setInterval(() => {
         if (state.isHidden) {
             return;
@@ -850,11 +996,205 @@ export function createGhostRuntime(options) {
         actionTimers.forEach((timerId) => window.clearTimeout(timerId));
         actionTimers.clear();
     });
+    const renderDebugHitAreas = () => {
+        // 에디터가 열려있을 때만 보이게 함
+        const isEditorOpen = elements.hitboxEditor && !elements.hitboxEditor.hidden;
+        if (!isEditorOpen) {
+            elements.sprite.querySelectorAll('.debug-hit-area').forEach(el => el.remove());
+            return;
+        }
+        elements.sprite.querySelectorAll('.debug-hit-area').forEach(el => el.remove());
+        elements.sprite.style.position = "relative";
+        const customHitAreas = options.character.assets?.hitAreas || {};
+        // 기본 파트가 없을 경우 기본값 병합
+        const mergedAreas = {
+            head: { minX: 0, maxX: 1, minY: 0, maxY: 0.36 },
+            face: { minX: 0.22, maxX: 0.78, minY: 0.36, maxY: 0.58 },
+            body: { minX: 0, maxX: 1, minY: 0.58, maxY: 1 },
+            ...customHitAreas
+        };
+        // 색상 결정 (고정 파트는 고정 색, 나머지는 해시 기반)
+        const getColor = (part) => {
+            if (part === "head")
+                return "rgba(255, 0, 0, 0.4)";
+            if (part === "face")
+                return "rgba(0, 255, 0, 0.4)";
+            if (part === "body")
+                return "rgba(0, 0, 255, 0.4)";
+            let hash = 0;
+            for (let i = 0; i < part.length; i++) {
+                hash = part.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            const c = (hash & 0x00FFFFFF).toString(16).toUpperCase();
+            const hex = "00000".substring(0, 6 - c.length) + c;
+            return `rgba(${parseInt(hex.substr(0, 2), 16)}, ${parseInt(hex.substr(2, 2), 16)}, ${parseInt(hex.substr(4, 2), 16)}, 0.4)`;
+        };
+        Object.entries(mergedAreas).forEach(([part, area]) => {
+            const color = getColor(part);
+            const div = document.createElement("div");
+            div.className = "debug-hit-area";
+            div.style.position = "absolute";
+            div.style.left = `${area.minX * 100}%`;
+            div.style.top = `${area.minY * 100}%`;
+            div.style.width = `${(area.maxX - area.minX) * 100}%`;
+            div.style.height = `${(area.maxY - area.minY) * 100}%`;
+            div.style.border = `2px solid ${color}`;
+            div.style.backgroundColor = color.replace("0.4", "0.1");
+            div.style.boxSizing = "border-box";
+            div.style.pointerEvents = "none";
+            div.style.zIndex = "10";
+            const label = document.createElement("span");
+            label.textContent = part;
+            label.style.position = "absolute";
+            label.style.top = "0";
+            label.style.left = "0";
+            label.style.backgroundColor = color;
+            label.style.color = "white";
+            label.style.fontSize = "10px";
+            label.style.padding = "2px 4px";
+            div.appendChild(label);
+            elements.sprite.appendChild(div);
+        });
+    };
+    // 히트박스 에디터 초기화
+    const initHitboxEditor = () => {
+        if (!elements.hitboxEditor || !elements.hitboxEditorBody)
+            return;
+        if (!options.character.assets) {
+            options.character.assets = { expressions: { neutral: "", happy: "", thinking: "", surprised: "" }, alt: "" };
+        }
+        if (!options.character.assets.hitAreas) {
+            options.character.assets.hitAreas = {};
+        }
+        const hitAreas = options.character.assets.hitAreas;
+        const renderEditorParts = () => {
+            elements.hitboxEditorBody.replaceChildren();
+            const currentParts = Object.keys(hitAreas);
+            // 기본 파트가 누락되어 있다면 표시용으로 추가
+            ["head", "face", "body"].forEach(p => {
+                if (!currentParts.includes(p))
+                    currentParts.unshift(p);
+            });
+            // 중복 제거 후 렌더링
+            Array.from(new Set(currentParts)).forEach(part => {
+                const group = document.createElement("div");
+                group.className = "hitbox-part-group";
+                const title = document.createElement("h4");
+                const titleLeft = document.createElement("div");
+                titleLeft.className = "title-left";
+                const indicator = document.createElement("span");
+                indicator.className = "color-indicator";
+                const getColor = (p) => {
+                    if (p === "head")
+                        return "red";
+                    if (p === "face")
+                        return "green";
+                    if (p === "body")
+                        return "blue";
+                    let hash = 0;
+                    for (let i = 0; i < p.length; i++)
+                        hash = p.charCodeAt(i) + ((hash << 5) - hash);
+                    const c = (hash & 0x00FFFFFF).toString(16).toUpperCase();
+                    return "#" + "00000".substring(0, 6 - c.length) + c;
+                };
+                indicator.style.backgroundColor = getColor(part);
+                titleLeft.appendChild(indicator);
+                titleLeft.appendChild(document.createTextNode(` ${part}`));
+                title.appendChild(titleLeft);
+                if (!["head", "face", "body"].includes(part)) {
+                    const deleteBtn = document.createElement("button");
+                    deleteBtn.className = "hitbox-part-delete";
+                    deleteBtn.textContent = "삭제";
+                    deleteBtn.onclick = () => {
+                        delete hitAreas[part];
+                        renderEditorParts();
+                        renderDebugHitAreas();
+                    };
+                    title.appendChild(deleteBtn);
+                }
+                group.appendChild(title);
+                const getDefault = (p, axis) => {
+                    if (p === "head")
+                        return axis === "minX" ? 0 : axis === "maxX" ? 1 : axis === "minY" ? 0 : 0.36;
+                    if (p === "face")
+                        return axis === "minX" ? 0.22 : axis === "maxX" ? 0.78 : axis === "minY" ? 0.36 : 0.58;
+                    if (p === "body")
+                        return axis === "minX" ? 0 : axis === "maxX" ? 1 : axis === "minY" ? 0.58 : 1;
+                    // 커스텀 파트는 기본 가운데 작게
+                    return axis === "minX" ? 0.4 : axis === "maxX" ? 0.6 : axis === "minY" ? 0.4 : 0.6;
+                };
+                ["minX", "maxX", "minY", "maxY"].forEach(axis => {
+                    const row = document.createElement("div");
+                    row.className = "hitbox-slider-row";
+                    const label = document.createElement("label");
+                    label.textContent = axis;
+                    const input = document.createElement("input");
+                    input.type = "range";
+                    input.min = "0";
+                    input.max = "100";
+                    const currentVal = hitAreas[part]?.[axis] ?? getDefault(part, axis);
+                    input.value = String(Math.round(currentVal * 100));
+                    const span = document.createElement("span");
+                    span.textContent = `${input.value}%`;
+                    input.addEventListener("input", (e) => {
+                        const val = Number(e.target.value) / 100;
+                        span.textContent = `${e.target.value}%`;
+                        if (!hitAreas[part])
+                            hitAreas[part] = { minX: getDefault(part, "minX"), maxX: getDefault(part, "maxX"), minY: getDefault(part, "minY"), maxY: getDefault(part, "maxY") };
+                        hitAreas[part][axis] = val;
+                        renderDebugHitAreas();
+                    });
+                    row.appendChild(label);
+                    row.appendChild(input);
+                    row.appendChild(span);
+                    group.appendChild(row);
+                });
+                elements.hitboxEditorBody.appendChild(group);
+            });
+        };
+        elements.hitboxEditorAdd?.addEventListener("click", () => {
+            if (Object.keys(hitAreas).length >= 10) {
+                alert("히트박스는 최대 10개까지만 추가할 수 있습니다.");
+                return;
+            }
+            const newPartId = prompt("추가할 히트박스 ID를 영문으로 입력하세요 (예: leg, arm)");
+            if (!newPartId || newPartId.trim() === "")
+                return;
+            const cleanId = newPartId.trim();
+            if (hitAreas[cleanId] || ["head", "face", "body"].includes(cleanId)) {
+                alert("이미 존재하는 파트 이름입니다.");
+                return;
+            }
+            hitAreas[cleanId] = { minX: 0.4, maxX: 0.6, minY: 0.4, maxY: 0.6 };
+            renderEditorParts();
+            renderDebugHitAreas();
+        });
+        elements.hitboxEditorClose?.addEventListener("click", () => {
+            elements.hitboxEditor.hidden = true;
+            renderDebugHitAreas();
+        });
+        elements.hitboxEditorCopy?.addEventListener("click", () => {
+            const data = JSON.stringify({ hitAreas }, null, 2);
+            navigator.clipboard.writeText(data).then(() => {
+                alert("히트박스 설정이 클립보드에 복사되었습니다!\n\n" + data);
+            });
+        });
+        elements.stage.addEventListener("ghostnest:open-ui", (e) => {
+            const detail = e.detail;
+            if (detail.target === "hitbox_editor") {
+                renderEditorParts();
+                renderDebugHitAreas();
+            }
+        });
+        renderEditorParts();
+    };
+    initHitboxEditor();
     renderCharacterState();
+    renderDebugHitAreas();
     renderStatusPanel();
     eventBus.emit("runtime:ready");
     let isDestroyed = false;
-    return {
+    const runtime = {
         emit(eventName, payload) {
             if (isDestroyed) {
                 return;
@@ -869,5 +1209,8 @@ export function createGhostRuntime(options) {
             cleanupCallbacks.forEach((cleanup) => cleanup());
         },
     };
+    const eventBridge = createExternalEventBridge(runtime);
+    cleanupCallbacks.push(() => eventBridge.destroy());
+    return runtime;
 }
 //# sourceMappingURL=createGhostRuntime.js.map

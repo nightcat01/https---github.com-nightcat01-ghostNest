@@ -1,11 +1,24 @@
 import { rine } from "./characters/rine/index.js";
 import { fortunePlugin } from "./plugins/fortune/index.js";
+import { systemInfoPlugin } from "./plugins/systemInfo/index.js";
+import { weatherPlugin } from "./plugins/weather/index.js";
+import { timerPlugin } from "./plugins/timer/index.js";
+import { createMinigamePlugin } from "./plugins/minigame/index.js";
 import { createGhostRuntime } from "./runtime/createGhostRuntime.js";
 const ghostNestWindow = window;
 ghostNestWindow.__ghostNestRuntime__?.destroy();
+const plugins = [
+    fortunePlugin,
+    systemInfoPlugin,
+    weatherPlugin,
+    timerPlugin,
+    createMinigamePlugin("가위", (result) => console.log(result)),
+    createMinigamePlugin("바위", (result) => console.log(result)),
+    createMinigamePlugin("보", (result) => console.log(result)),
+];
 ghostNestWindow.__ghostNestRuntime__ = createGhostRuntime({
     character: rine,
-    plugins: [fortunePlugin],
+    plugins,
     selectors: {
         stage: "#characterStage",
         sprite: "#characterSprite",
@@ -14,7 +27,13 @@ ghostNestWindow.__ghostNestRuntime__ = createGhostRuntime({
         speechText: "#speechText",
         balloonActionMenu: "#balloonActionMenu",
         eventLog: "#eventLog",
-        menuButtons: "[data-command]",
+        menuButtons: "[data-command], [data-plugin]",
+        hitboxEditor: "#hitboxEditor",
+        hitboxEditorAdd: "#hitboxEditorAdd",
+        hitboxEditorClose: "#hitboxEditorClose",
+        hitboxEditorBody: "#hitboxEditorBody",
+        hitboxEditorCopy: "#hitboxEditorCopy",
+        restoreBadge: "#restoreBadge",
         observeAreas: "[data-observe-area]",
         statusMode: "#statusMode",
         statusExpression: "#statusExpression",
@@ -26,6 +45,7 @@ ghostNestWindow.__ghostNestRuntime__ = createGhostRuntime({
     },
     features: {
         commandHoverDescription: true,
+        debugHitAreas: true,
     },
     typing: {
         enabled: true,

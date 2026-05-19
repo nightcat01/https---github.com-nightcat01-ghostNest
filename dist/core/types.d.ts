@@ -7,6 +7,7 @@ export type RuntimeEventMap = {
     "character:touch": {
         part: CharacterTouchPart;
     };
+    "character:right_click": Record<string, never>;
     "area:hover": {
         area: InteractiveAreaId;
     };
@@ -34,12 +35,19 @@ export type CharacterDefinition = {
     assets?: CharacterAssets;
 };
 export type CharacterExpression = "neutral" | "happy" | "thinking" | "surprised";
+export type CharacterTouchArea = {
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
+};
 export type CharacterAssets = {
     expressions: Record<CharacterExpression, CharacterExpressionAsset>;
     alt: string;
+    hitAreas?: Partial<Record<CharacterTouchPart, CharacterTouchArea>>;
 };
 export type CharacterExpressionAsset = string | string[];
-export type CharacterTouchPart = "head" | "face" | "body";
+export type CharacterTouchPart = string & {};
 export type InteractiveAreaId = "runtimeTitle" | "eventLog" | "commandMenu";
 export type RuntimeCommandId = "fortune" | "line" | "hide";
 export type DialogueCategory = "onMount" | "onClick" | "onTouchHead" | "onTouchFace" | "onTouchBody" | "onHoverRuntimeTitle" | "onHoverEventLog" | "onHoverCommandMenu" | "onHoverFortuneCommand" | "onHoverLineCommand" | "onHoverHideCommand" | "onRandomPrompt" | "onIdle" | "onLine" | "onHide" | "onShow";
@@ -177,7 +185,7 @@ export type RuntimePlugin<TResult extends PluginResult = PluginResult> = {
     id: string;
     name: string;
     description?: string;
-    execute: () => TResult;
+    execute: () => TResult | Promise<TResult>;
 };
 export type RuntimeSelectors = {
     stage: string;
@@ -188,6 +196,12 @@ export type RuntimeSelectors = {
     balloonActionMenu?: string;
     eventLog: string;
     menuButtons: string;
+    hitboxEditor?: string;
+    hitboxEditorAdd?: string;
+    hitboxEditorClose?: string;
+    hitboxEditorBody?: string;
+    hitboxEditorCopy?: string;
+    restoreBadge?: string;
     observeAreas: string;
     statusMode?: string;
     statusExpression?: string;
@@ -212,10 +226,20 @@ export type RuntimeTimingOptions = {
 };
 export type RuntimeFeatureOptions = {
     commandHoverDescription: boolean;
+    debugHitAreas?: boolean;
 };
 export type SpeechTypingOptions = {
     enabled: boolean;
     interval: number;
+};
+export type StorageAdapter = {
+    get: (key: string) => unknown | Promise<unknown>;
+    set: (key: string, value: unknown) => void | Promise<void>;
+    remove: (key: string) => void | Promise<void>;
+};
+export type DialogueEngine = {
+    line: (category: DialogueCategory) => DialogueMessage | Promise<DialogueMessage>;
+    custom: (text: string) => DialogueMessage | Promise<DialogueMessage>;
 };
 export type GhostRuntimeOptions = {
     character: CharacterDefinition;
@@ -227,6 +251,8 @@ export type GhostRuntimeOptions = {
     spriteSize?: Partial<CharacterSpriteSizeOptions>;
     rules?: RuntimeRule[];
     maxLogItems?: number;
+    dialogueEngine?: DialogueEngine;
+    storageAdapter?: StorageAdapter;
 };
 export type GhostRuntime = {
     emit: <TEventName extends RuntimeEventName>(eventName: TEventName, payload?: RuntimeEventMap[TEventName]) => void;

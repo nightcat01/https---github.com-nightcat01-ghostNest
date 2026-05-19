@@ -64,15 +64,29 @@
             <img class="character-sprite-image" id="characterSpriteImage" src="" alt="" />
           </button>
 
-          <nav class="character-menu" aria-label="캐릭터 명령">
-            <button type="button" data-command="fortune">오늘 운세</button>
-            <button type="button" data-command="line">한마디</button>
-            <button type="button" data-command="hide">숨기기</button>
-          </nav>
         </div>
       </section>
     </main>
 
+    <div id="hitboxEditor" class="hitbox-editor" data-runtime-ui="hitbox_editor" hidden>
+      <div class="hitbox-editor-header">
+        <h3>히트박스 에디터</h3>
+        <div style="display: flex; gap: 8px;">
+          <button type="button" id="hitboxEditorAdd" aria-label="새 부위 추가" style="font-size: 0.85rem;">+ 추가</button>
+          <button type="button" id="hitboxEditorClose" aria-label="닫기">✕</button>
+        </div>
+      </div>
+      <div class="hitbox-editor-body" id="hitboxEditorBody">
+        <!-- JS에서 부위별 컨트롤 동적 생성 -->
+      </div>
+      <div class="hitbox-editor-footer">
+        <button type="button" id="hitboxEditorCopy">설정값 JSON 복사</button>
+      </div>
+    </div>
+
+    <button id="restoreBadge" class="restore-badge" aria-label="캐릭터 부르기" hidden>
+      <span class="badge-icon">🐣</span>
+    </button>
     <script type="module" src="./dist/app.js"></script>
   </body>
 </html>

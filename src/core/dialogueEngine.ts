@@ -1,4 +1,4 @@
-import type { CharacterProfile, DialogueCategory, DialogueLineSet, DialogueMessage } from "./types.js";
+import type { CharacterProfile, DialogueCategory, DialogueLineSet, DialogueMessage, DialogueEngine } from "./types.js";
 
 type DialogueEngineOptions = {
   profile: CharacterProfile;
@@ -8,7 +8,7 @@ type DialogueEngineOptions = {
 /**
  * 캐릭터 프로필과 대사 목록을 받아 말풍선 메시지를 생성하는 엔진을 만듭니다.
  */
-export function createDialogueEngine({ profile, lines }: DialogueEngineOptions) {
+export function createDialogueEngine({ profile, lines }: DialogueEngineOptions): DialogueEngine {
   /**
    * 특정 대사 카테고리에서 랜덤 대사 하나를 고릅니다.
    */

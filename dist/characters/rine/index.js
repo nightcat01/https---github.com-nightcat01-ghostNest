@@ -20,6 +20,11 @@ export const rine = {
                 "./src/characters/rine/rine_standing_shy.png",
             ],
         },
+        hitAreas: {
+            head: { minX: 0.2, maxX: 0.8, minY: 0.0, maxY: 0.35 },
+            face: { minX: 0.22, maxX: 0.78, minY: 0.35, maxY: 0.58 },
+            body: { minX: 0.1, maxX: 0.9, minY: 0.58, maxY: 1.0 },
+        },
     },
 };
 //# sourceMappingURL=index.js.map
