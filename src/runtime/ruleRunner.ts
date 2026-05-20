@@ -26,20 +26,6 @@ type RuleRunnerOptions = {
   setLastEventLabel: (eventName: RuntimeEventName) => void;
 };
 
-const ruleEventNames = [
-  "runtime:ready",
-  "character:click",
-  "character:double_click",
-  "character:right_click",
-  "character:touch",
-  "character:idle",
-  "area:hover",
-  "command:hover",
-  "character:randomPrompt",
-  "command:line",
-  "command:fortune",
-] satisfies RuntimeEventName[];
-
 function matchesRuleWhen(rule: RuntimeRule, payload: RuntimeEventMap[RuntimeEventName]) {
   if (!rule.when) {
     return true;
@@ -94,6 +80,7 @@ function createConditionChecker({
 export function bindRuntimeRuleEvents(options: RuleRunnerOptions) {
   const { eventBus, rules, runActions, setLastEventLabel } = options;
   const passesConditions = createConditionChecker(options);
+  const ruleEventNames = Array.from(new Set(rules.map((rule) => rule.event)));
 
   function runRules<TEventName extends RuntimeEventName>(
     eventName: TEventName,

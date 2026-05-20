@@ -76,3 +76,28 @@
 - prompt
 - reference
 - feature
+
+
+# AI Coding Rules
+
+## Absolute Rules
+- Do not rewrite unrelated files.
+- Do not introduce a new architecture without permission.
+- Prefer existing services, hooks, repositories, and components.
+- Follow current naming conventions.
+- Keep changes minimal and localized.
+- Do not duplicate business logic.
+- Do not move files unless explicitly requested.
+- Do not change UI structure unless required.
+- If unsure, preserve existing code style.
+
+## Before Editing
+- Identify affected files.
+- Check nearby similar implementations.
+- Reuse existing patterns.
+- Explain the intended change briefly.
+
+## After Editing
+- Summarize changed files.
+- Mention any assumptions.
+- Mention any possible side effects.

@@ -2,8 +2,6 @@ import type {
   CharacterExpression,
   CharacterTouchPart,
   DialogueCategory,
-  InteractiveAreaId,
-  RuntimeCommandId,
   RuntimeRule,
   RuntimeTimingOptions,
 } from "../core/types.js";
@@ -33,13 +31,7 @@ const touchPartConfig: Record<
   },
 };
 
-const areaHoverConfig: Record<
-  InteractiveAreaId,
-  {
-    dialogueCategory: DialogueCategory;
-    logLabel: string;
-  }
-> = {
+const areaHoverConfig = {
   runtimeTitle: {
     dialogueCategory: "onHoverRuntimeTitle",
     logLabel: "area:hover.runtimeTitle",
@@ -52,19 +44,15 @@ const areaHoverConfig: Record<
     dialogueCategory: "onHoverCommandMenu",
     logLabel: "area:hover.commandMenu",
   },
-};
-
-const commandHoverConfig: Record<
-  RuntimeCommandId,
+} satisfies Record<
+  string,
   {
     dialogueCategory: DialogueCategory;
     logLabel: string;
   }
-> = {
-  fortune: {
-    dialogueCategory: "onHoverFortuneCommand",
-    logLabel: "command:hover.fortune",
-  },
+>;
+
+const commandHoverConfig = {
   line: {
     dialogueCategory: "onHoverLineCommand",
     logLabel: "command:hover.line",
@@ -73,7 +61,13 @@ const commandHoverConfig: Record<
     dialogueCategory: "onHoverHideCommand",
     logLabel: "command:hover.hide",
   },
-};
+} satisfies Record<
+  string,
+  {
+    dialogueCategory: DialogueCategory;
+    logLabel: string;
+  }
+>;
 
 /**
  * 현재 MVP에서 기본으로 제공하는 이벤트-액션 규칙을 생성합니다.
@@ -105,172 +99,6 @@ export function createDefaultRules(timing: RuntimeTimingOptions): RuntimeRule[] 
         { type: "change_expression", expression: "thinking", clearTouchedPart: true },
         { type: "speak_text", text: "앗, 거기는 왜 자꾸 누르시나요?" },
         { type: "log", label: "character:double_click" },
-      ],
-    },
-    {
-      id: "character.right_click.management_menu",
-      event: "character:right_click",
-      actions: [
-        { type: "touch_interaction" },
-        { type: "change_expression", expression: "thinking", clearTouchedPart: true },
-        { type: "speak_text", text: "관리 메뉴를 열었어요. 필요한 동작을 골라주세요." },
-        {
-          type: "open_management_menu",
-          title: "관리 메뉴",
-          items: [
-            {
-              id: "say-line",
-              label: "한마디",
-              actions: [
-                { type: "speak", category: "onLine" },
-                { type: "log", label: "management.say_line" },
-              ],
-            },
-            {
-              id: "draw-fortune",
-              label: "운세 실행",
-              actions: [
-                { type: "call_plugin", pluginId: "fortune" },
-                { type: "log", label: "management.draw_fortune" },
-              ],
-            },
-            {
-              id: "weather",
-              label: "날씨",
-              actions: [
-                { type: "call_plugin", pluginId: "weather" },
-                { type: "log", label: "management.weather" },
-              ],
-            },
-            {
-              id: "system-info",
-              label: "시스템 정보",
-              actions: [
-                { type: "call_plugin", pluginId: "system_info" },
-                { type: "log", label: "management.system_info" },
-              ],
-            },
-            {
-              id: "minigame",
-              label: "가위바위보",
-              children: [
-                {
-                  id: "minigame-scissors",
-                  label: "가위",
-                  actions: [
-                    { type: "call_plugin", pluginId: "minigame_가위" },
-                    { type: "log", label: "management.minigame.scissors" },
-                  ],
-                },
-                {
-                  id: "minigame-rock",
-                  label: "바위",
-                  actions: [
-                    { type: "call_plugin", pluginId: "minigame_바위" },
-                    { type: "log", label: "management.minigame.rock" },
-                  ],
-                },
-                {
-                  id: "minigame-paper",
-                  label: "보",
-                  actions: [
-                    { type: "call_plugin", pluginId: "minigame_보" },
-                    { type: "log", label: "management.minigame.paper" },
-                  ],
-                },
-              ],
-            },
-            {
-              id: "timer-3m",
-              label: "3분 타이머",
-              actions: [
-                { type: "call_plugin", pluginId: "timer" },
-                {
-                  type: "start_timer",
-                  timer: "cup_ramen",
-                  duration: 180000,
-                  actions: [
-                    { type: "show_notification", title: "타이머 완료", message: "3분이 지났어요!" },
-                    { type: "play_animation", animation: "jump", duration: 500 },
-                    { type: "speak_text", text: "3분이 지났어요! 얼른 확인해보세요." },
-                  ],
-                },
-                { type: "log", label: "management.start_timer" },
-              ],
-            },
-            {
-              id: "balloon-theme",
-              label: "말풍선 테마",
-              children: [
-                {
-                  id: "balloon-default",
-                  label: "기본",
-                  actions: [
-                    { type: "change_balloon", theme: "default" },
-                    { type: "speak_text", text: "말풍선을 기본 분위기로 돌려놓았어요." },
-                    { type: "log", label: "management.balloon.default" },
-                  ],
-                },
-                {
-                  id: "balloon-soft",
-                  label: "soft",
-                  actions: [
-                    { type: "change_balloon", theme: "soft" },
-                    { type: "speak_text", text: "말풍선 분위기를 조금 부드럽게 바꿨어요." },
-                    { type: "log", label: "management.balloon.soft" },
-                  ],
-                },
-                {
-                  id: "balloon-dark-magic",
-                  label: "dark magic",
-                  actions: [
-                    { type: "change_balloon", theme: "dark_magic" },
-                    { type: "speak_text", text: "조금 더 마법서 같은 분위기로 바꿨어요." },
-                    { type: "log", label: "management.balloon.dark_magic" },
-                  ],
-                },
-              ],
-            },
-            {
-              id: "jump",
-              label: "점프",
-              actions: [
-                { type: "play_animation", animation: "jump", duration: 460 },
-                { type: "speak_text", text: "자, 가볍게 뛰어볼게요!" },
-                { type: "log", label: "management.animation.jump" },
-              ],
-            },
-            {
-              id: "hide",
-              label: "숨기기",
-              actions: [
-                { type: "toggle_hidden" },
-                { type: "speak", category: "onHide" },
-                { type: "log", label: "management.hide" },
-              ],
-            },
-            {
-              id: "hitbox-editor",
-              label: "[개발자] 히트박스 설정",
-              actions: [
-                { type: "close_management_menu" },
-                { type: "open_ui", target: "hitbox_editor" },
-                { type: "log", label: "management.open_hitbox_editor" },
-              ],
-            },
-            {
-              id: "close",
-              label: "나가기",
-              actions: [
-                { type: "close_management_menu" },
-                { type: "change_expression", expression: "neutral" },
-                { type: "speak_text", text: "메뉴를 닫을게요." },
-                { type: "log", label: "management.close" },
-              ],
-            },
-          ],
-        },
-        { type: "log", label: "character:right_click.management_menu" },
       ],
     },
     ...Object.entries(touchPartConfig).map(
@@ -342,15 +170,6 @@ export function createDefaultRules(timing: RuntimeTimingOptions): RuntimeRule[] 
         { type: "touch_interaction" },
         { type: "speak", category: "onLine" },
         { type: "log", label: "command:line" },
-      ],
-    },
-    {
-      id: "command.fortune",
-      event: "command:fortune",
-      actions: [
-        { type: "touch_interaction" },
-        { type: "call_plugin", pluginId: "fortune" },
-        { type: "log", label: "plugin:fortune.execute" },
       ],
     },
   ];

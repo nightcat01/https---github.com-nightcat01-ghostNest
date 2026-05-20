@@ -6,7 +6,7 @@ export function createDialogueEngine({ profile, lines }) {
      * 특정 대사 카테고리에서 랜덤 대사 하나를 고릅니다.
      */
     function pick(category) {
-        const candidates = lines[category];
+        const candidates = lines[category] ?? [];
         const index = Math.floor(Math.random() * candidates.length);
         return candidates[index] ?? "";
     }

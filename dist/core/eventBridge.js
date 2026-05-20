@@ -8,7 +8,7 @@ export function createExternalEventBridge(runtime) {
         if (!data || typeof data !== "object" || data.type !== "ghostnest:command") {
             return;
         }
-        // 예: { type: "ghostnest:command", command: "call_plugin", payload: { pluginId: "fortune" } }
+        // 예: { type: "ghostnest:command", command: "call_plugin", payload: { pluginId: "example" } }
         // 여기서는 MVP 형태로 runtime에 노출된 인터페이스를 활용하거나, 
         // 나중에는 외부 전용 이벤트를 정의할 수 있습니다.
         // 단순화를 위해 현재는 'external:command' 이벤트를 eventBus로 쏘거나, 

@@ -1,12 +1,17 @@
 import { createDialogueEngine } from "../core/dialogueEngine.js";
+import { validateDialogueScript } from "../core/dialogueScriptValidator.js";
 import { createEventBus } from "../core/eventBus.js";
 import { createRuntimeState } from "../core/runtimeState.js";
 import { createLocalStorageAdapter } from "../core/storageAdapter.js";
 import { createExternalEventBridge } from "../core/eventBridge.js";
+import { createRuntimeDiagnostics } from "../devtools/runtimeDiagnostics.js";
 import { createActionRunner } from "./actionRunner.js";
+import { createCharacterRenderer } from "./characterRenderer.js";
 import { createDefaultRules } from "./defaultRules.js";
+import { createDialoguePlayer } from "./dialoguePlayer.js";
 import { getRuntimeElements } from "./domElements.js";
-import { initHitboxEditor } from "./hitboxEditor.js";
+import { initFloatingLayout } from "./floatingLayout.js";
+import { initHitboxEditor } from "../devtools/hitboxEditor.js";
 import { bindRuntimeDomEvents } from "./runtimeEventBindings.js";
 import { startRuntimeTimers } from "./runtimeTimers.js";
 import { bindRuntimeRuleEvents } from "./ruleRunner.js";
@@ -19,29 +24,12 @@ import {
 } from "./runtimeDefaults.js";
 import type {
   CharacterExpression,
+  DialogueChoice,
   DialogueMessage,
   GhostRuntime,
   GhostRuntimeOptions,
   RuntimeEventName,
 } from "../core/types.js";
-
-/**
- * 표정 asset 후보가 여러 개일 때 직전 이미지와 가능한 한 다른 이미지를 고릅니다.
- */
-function pickExpressionAsset(asset: string | string[], currentAsset: string | null) {
-  if (typeof asset === "string") {
-    return asset;
-  }
-
-  if (asset.length === 0) {
-    return null;
-  }
-
-  const candidates = asset.length > 1 ? asset.filter((candidate) => candidate !== currentAsset) : asset;
-  const index = Math.floor(Math.random() * candidates.length);
-
-  return candidates[index] ?? asset[0] ?? null;
-}
 
 /**
  * 캐릭터 데이터, 플러그인, DOM selector를 받아 웹 캐릭터 런타임을 생성합니다.
@@ -79,78 +67,133 @@ export function createGhostRuntime(options: GhostRuntimeOptions): GhostRuntime {
   const cleanupCallbacks: Array<() => void> = [];
   const actionTimers = new Map<string, number>();
   const ruleCooldowns = new Map<string, number>();
-  let speechTypingTimer: number | null = null;
-  let speechTypingToken = 0;
-  let lastEventLabel = "runtime:boot";
+  const characterRenderer = createCharacterRenderer({ elements, character: options.character });
+  const diagnostics = createRuntimeDiagnostics({
+    selectors: options.devtools?.diagnostics?.selectors,
+    state,
+    timing,
+    actionTimers,
+    maxLogItems,
+  });
+  const dialoguePlayer = createDialoguePlayer({
+    typingInterval: typing.enabled ? typing.interval : 0,
+    onText(text) {
+      elements.speechText.textContent += text;
+    },
+    onClear() {
+      elements.speechText.textContent = "";
+    },
+    onSurface(id) {
+      elements.stage.dispatchEvent(new CustomEvent("ghostnest:surface-change", { detail: { id } }));
+    },
+    onChoice(choices) {
+      renderDialogueChoices(choices);
+    },
+    onMouth(isActive) {
+      characterRenderer.setMouthAnimationActive(isActive);
+    },
+    onEnd() {
+      characterRenderer.setMouthAnimationActive(false);
+      state.mode = "idle";
+      characterRenderer.setMode(state.mode);
+      diagnostics.renderStatusPanel();
+    },
+    onStop() {
+      characterRenderer.setMouthAnimationActive(false);
+      state.mode = "idle";
+      characterRenderer.setMode(state.mode);
+      diagnostics.renderStatusPanel();
+    },
+  });
 
   elements.stage.style.setProperty("--character-sprite-width", spriteSize.desktopWidth);
   elements.stage.style.setProperty("--character-sprite-height", spriteSize.desktopHeight);
   elements.stage.style.setProperty("--character-sprite-mobile-width", spriteSize.mobileWidth);
   elements.stage.style.setProperty("--character-sprite-mobile-height", spriteSize.mobileHeight);
+  cleanupCallbacks.push(initFloatingLayout({ elements }));
 
   /**
    * 현재 대화 메시지를 말풍선 DOM에 반영합니다.
    */
-  function renderSpeech(message: DialogueMessage) {
-    elements.speakerName.textContent = message.speaker;
+  function clearDialogueChoices() {
+    elements.balloonActionMenu?.replaceChildren();
 
-    if (speechTypingTimer !== null) {
-      window.clearTimeout(speechTypingTimer);
-      speechTypingTimer = null;
+    if (elements.balloonActionMenu) {
+      elements.balloonActionMenu.hidden = true;
+      delete elements.balloonActionMenu.dataset.managementMenuDisplay;
     }
+  }
 
-    speechTypingToken += 1;
+  function renderDialogueChoices(choices: DialogueChoice[]) {
+    const menuElement = elements.balloonActionMenu;
 
-    if (!typing.enabled || typing.interval <= 0) {
-      elements.speechText.textContent = message.text;
+    if (!menuElement) {
       return;
     }
 
-    const token = speechTypingToken;
-    const characters = Array.from(message.text);
-    let index = 1;
+    menuElement.replaceChildren();
+    menuElement.dataset.managementMenuDisplay = "choice";
+
+    choices.forEach((choice, index) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = choice.label;
+      button.dataset.dialogueChoice = String(index);
+      button.addEventListener("click", () => {
+        clearDialogueChoices();
+        void runActions(choice.actions);
+      });
+      menuElement.append(button);
+    });
+
+    menuElement.hidden = false;
+  }
+
+  function renderSpeech(message: DialogueMessage) {
+    elements.speakerName.textContent = message.speaker;
+
+    dialoguePlayer.stop();
+    clearDialogueChoices();
     elements.speechText.textContent = "";
 
-    const typeNext = () => {
-      if (token !== speechTypingToken) {
-        return;
-      }
+    const script = message.script ?? [
+      { type: "text" as const, value: message.text },
+      { type: "end" as const },
+    ];
+    const validation = validateDialogueScript(script, {
+      knownSurfaceIds: Object.keys(options.character.assets?.surfaces ?? {}),
+    });
 
-      elements.speechText.textContent = characters.slice(0, index).join("");
+    if (!validation.valid) {
+      console.warn("[GhostNest] Invalid DialogueScript. Falling back to plain text.", validation.errors);
+      void dialoguePlayer.play([
+        { type: "text", value: message.text },
+        { type: "end" },
+      ]);
+      return;
+    }
 
-      if (index > characters.length) {
-        speechTypingTimer = null;
-        return;
-      }
+    if (validation.warnings.length > 0) {
+      console.warn("[GhostNest] DialogueScript warnings.", validation.warnings);
+    }
 
-      index += 1;
-      speechTypingTimer = window.setTimeout(typeNext, typing.interval);
-    };
+    state.mode = "talking";
+    elements.stage.dataset.state = state.mode;
+    void dialoguePlayer.play(validation.script);
+  }
 
-    typeNext();
+  function renderPreviewSpeech(message: DialogueMessage) {
+    elements.speakerName.textContent = message.speaker;
+    dialoguePlayer.stop();
+    elements.speechText.textContent = message.text;
+    characterRenderer.setMouthAnimationActive(false);
   }
 
   /**
    * 런타임 상태를 sprite dataset에 반영해 CSS 표정/포즈를 전환합니다.
    */
   function renderCharacterState() {
-    elements.sprite.dataset.expression = state.expression;
-    elements.spriteImage.alt = options.character.assets?.alt ?? options.character.profile.name;
-
-    const expressionAsset = options.character.assets
-      ? pickExpressionAsset(options.character.assets.expressions[state.expression], elements.spriteImage.getAttribute("src"))
-      : null;
-
-    if (expressionAsset && elements.spriteImage.getAttribute("src") !== expressionAsset) {
-      elements.spriteImage.src = expressionAsset;
-    }
-
-    if (state.lastTouchedPart) {
-      elements.sprite.dataset.touchedPart = state.lastTouchedPart;
-      return;
-    }
-
-    delete elements.sprite.dataset.touchedPart;
+    characterRenderer.renderState(state);
   }
 
   /**
@@ -163,83 +206,26 @@ export function createGhostRuntime(options: GhostRuntimeOptions): GhostRuntime {
   }
 
   /**
-   * 데모 화면의 이벤트 로그에 최근 런타임 이벤트를 추가합니다.
-   */
-  function addLog(label: string) {
-    const item = document.createElement("li");
-    const time = new Intl.DateTimeFormat("ko-KR", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    }).format(new Date());
-
-    item.textContent = `${time} · ${label}`;
-    elements.eventLog.prepend(item);
-
-    while (elements.eventLog.children.length > maxLogItems) {
-      elements.eventLog.lastElementChild?.remove();
-    }
-  }
-
-  /**
-   * 테스트 화면의 런타임 상태 패널을 갱신합니다.
-   */
-  function renderStatusPanel() {
-    const now = Date.now();
-    const idleRemaining = Math.max(0, timing.idleDelay - (now - state.lastInteractionAt));
-    const randomIdleRemaining = Math.max(0, timing.randomPromptDelay - (now - state.lastInteractionAt));
-    const randomCooldownRemaining = Math.max(0, timing.randomPromptCooldown - (now - state.lastPromptedAt));
-    const randomReady = randomIdleRemaining === 0 && randomCooldownRemaining === 0;
-
-    if (elements.statusMode) {
-      elements.statusMode.textContent = state.mode;
-    }
-
-    if (elements.statusExpression) {
-      elements.statusExpression.textContent = state.expression;
-    }
-
-    if (elements.statusVisibility) {
-      elements.statusVisibility.textContent = state.isHidden ? "숨김" : "표시 중";
-    }
-
-    if (elements.statusLastEvent) {
-      elements.statusLastEvent.textContent = lastEventLabel;
-    }
-
-    if (elements.statusIdleCountdown) {
-      elements.statusIdleCountdown.textContent = `${Math.ceil(idleRemaining / 1000)}초`;
-    }
-
-    if (elements.statusRandomPrompt) {
-      elements.statusRandomPrompt.textContent = randomReady
-        ? `대기 중 (${Math.round(timing.randomPromptChance * 100)}%)`
-        : `조건 대기 ${Math.ceil(Math.max(randomIdleRemaining, randomCooldownRemaining) / 1000)}초`;
-    }
-
-    if (elements.statusActionTimers) {
-      elements.statusActionTimers.textContent = `${actionTimers.size}개`;
-    }
-  }
-
-  /**
    * 사용자 상호작용 시각을 갱신해 idle/random prompt 타이머를 조절합니다.
    */
   function touchInteraction() {
     state.lastInteractionAt = Date.now();
   }
 
-  const { runAction, runActions } = createActionRunner({
+  const { runAction, runActions, registerAction } = createActionRunner({
     elements,
     state,
     dialogue,
     pluginRegistry,
     storageAdapter,
     actionTimers,
+    managementMenu: options.managementMenu,
     eventBus,
     renderSpeech,
+    renderPreviewSpeech,
     renderCharacterState,
-    addLog,
+    setLayerAnimationActive: characterRenderer.setLayerAnimationActive,
+    addLog: diagnostics.addLog,
     touchInteraction,
   });
 
@@ -250,9 +236,7 @@ export function createGhostRuntime(options: GhostRuntimeOptions): GhostRuntime {
     state,
     ruleCooldowns,
     runActions,
-    setLastEventLabel: (eventName: RuntimeEventName) => {
-      lastEventLabel = eventName;
-    },
+    setLastEventLabel: diagnostics.setLastEventLabel,
   });
 
   eventBus.on("command:hide", async () => {
@@ -266,12 +250,12 @@ export function createGhostRuntime(options: GhostRuntimeOptions): GhostRuntime {
 
     if (state.isHidden) {
       renderSpeech(await dialogue.line("onHide"));
-      addLog("character:hide");
+      diagnostics.addLog("character:hide");
       return;
     }
 
     renderSpeech(await dialogue.line("onShow"));
-    addLog("character:show");
+    diagnostics.addLog("character:show");
   });
 
   bindRuntimeDomEvents({
@@ -281,30 +265,49 @@ export function createGhostRuntime(options: GhostRuntimeOptions): GhostRuntime {
     cleanupCallbacks,
     touchInteraction,
     runAction,
+    shouldSkipDialogue: dialoguePlayer.getIsPlaying,
+    skipDialogue: dialoguePlayer.skip,
+  });
+
+  const handleSurfaceChange = (event: Event) => {
+    const detail = (event as CustomEvent<{ id?: string }>).detail;
+
+    if (detail?.id) {
+      characterRenderer.applySurface(detail.id);
+    }
+  };
+
+  elements.stage.addEventListener("ghostnest:surface-change", handleSurfaceChange);
+  cleanupCallbacks.push(() => {
+    elements.stage.removeEventListener("ghostnest:surface-change", handleSurfaceChange);
   });
 
   cleanupCallbacks.push(startRuntimeTimers({
     eventBus,
     state,
     timing,
-    renderStatusPanel,
+    renderStatusPanel: diagnostics.renderStatusPanel,
     touchInteraction,
   }));
 
   cleanupCallbacks.push(() => {
-    speechTypingToken += 1;
-
-    if (speechTypingTimer !== null) {
-      window.clearTimeout(speechTypingTimer);
-    }
+    dialoguePlayer.stop();
+    characterRenderer.destroy();
 
     actionTimers.forEach((timerId) => window.clearTimeout(timerId));
     actionTimers.clear();
   });
 
-  initHitboxEditor({ elements, character: options.character });
+  if (options.devtools?.hitboxEditor) {
+    const hitboxEditor = initHitboxEditor({
+      elements,
+      character: options.character,
+      selectors: options.devtools.hitboxEditor.selectors,
+    });
+    cleanupCallbacks.push(hitboxEditor.destroy);
+  }
   renderCharacterState();
-  renderStatusPanel();
+  diagnostics.renderStatusPanel();
   eventBus.emit("runtime:ready");
 
   let isDestroyed = false;
@@ -317,6 +320,7 @@ export function createGhostRuntime(options: GhostRuntimeOptions): GhostRuntime {
 
       eventBus.emit(eventName, payload);
     },
+    registerAction,
     destroy() {
       if (isDestroyed) {
         return;

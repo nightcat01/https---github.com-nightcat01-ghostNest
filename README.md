@@ -109,6 +109,7 @@ src/
 ```txt
 speak
 speak_text
+speak_script
 change_expression
 set_touched_part
 toggle_hidden
@@ -117,6 +118,7 @@ log
 touch_interaction
 mark_prompted
 play_animation
+play_layer_animation
 open_ui
 close_ui
 navigate
@@ -130,6 +132,11 @@ start_timer
 stop_timer
 move_character
 change_balloon
+change_balloon_font_size
+open_management_menu
+set_management_menu_display
+reset_runtime_ui
+close_management_menu
 ```
 
 ## Rule 예시
@@ -155,6 +162,8 @@ rules: [
 기본 동작으로 캐릭터를 더블클릭하면 말풍선 안에 관리 메뉴가 열립니다. 이 메뉴는 `character:double_click` rule과 `open_management_menu` 액션으로 구성되어 있습니다.
 
 관리 메뉴 항목은 `children`을 가질 수 있어 depth 메뉴를 만들 수 있습니다. 현재 기본 메뉴의 `말풍선 테마`는 하위 메뉴에서 `기본`, `soft`, `dark magic`을 선택합니다.
+
+`description`을 넣으면 메뉴 항목에 마우스를 올리거나 포커스했을 때 캐릭터가 해당 기능을 짧게 설명할 수 있습니다.
 
 ## 액션별 현재 구현 예시
 
@@ -397,3 +406,69 @@ HTML에 아래처럼 대상이 있어야 합니다.
 ```
 
 현재 CSS에는 `dark_magic`, `soft` 테마 예시가 있습니다.
+
+### change_balloon_font_size
+
+말풍선 글자 크기를 변경합니다.
+
+```ts
+{ type: "change_balloon_font_size", size: "large" }
+```
+
+현재 CSS에는 `small`, `large` 예시가 있고, `default`를 주면 기본 크기로 되돌립니다.
+
+### open_management_menu
+
+관리 메뉴를 엽니다. 메뉴 항목은 `children`으로 depth를 만들고, 실제 실행은 각 항목의 `actions` 배열에 위임합니다.
+
+```ts
+{
+  type: "open_management_menu",
+  menuId: "system-tools",
+  title: "시스템 도구",
+  items: [
+    {
+      id: "weather",
+      label: "날씨 확인",
+      description: "날씨 기능을 실행해요.",
+      actions: [{ type: "call_plugin", pluginId: "weather" }],
+    },
+  ],
+}
+```
+
+`menuId`가 있으면 메뉴별 표시 방식 설정에 사용할 수 있습니다.
+
+### set_management_menu_display
+
+관리 메뉴를 말풍선 안에서 열지, 별도 패널로 열지 설정합니다.
+
+```ts
+{ type: "set_management_menu_display", display: "panel" }
+```
+
+특정 메뉴에만 적용하려면 `menuId`를 함께 지정합니다.
+
+```ts
+{ type: "set_management_menu_display", menuId: "system-tools", display: "balloon" }
+```
+
+현재 구현에서는 캐릭터별 저장소에 저장되어 새로고침 후에도 유지됩니다.
+
+### reset_runtime_ui
+
+사용자가 바꾼 런타임 UI 설정을 기본값으로 되돌립니다.
+
+```ts
+{ type: "reset_runtime_ui" }
+```
+
+현재 초기화 대상은 메뉴 표시 방식, 말풍선 테마, 말풍선 글자 크기, 캐릭터 위치입니다.
+
+### close_management_menu
+
+열려 있는 관리 메뉴를 닫습니다.
+
+```ts
+{ type: "close_management_menu" }
+```

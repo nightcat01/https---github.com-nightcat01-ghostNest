@@ -8,7 +8,6 @@ import type {
   RuntimeEventName,
 } from "../core/types.js";
 import type { RuntimeElements } from "./domElements.js";
-import { commandIds, interactiveAreaIds } from "./runtimeDefaults.js";
 
 type RuntimeEventEmitter = {
   emit: <TEventName extends RuntimeEventName>(
@@ -24,20 +23,22 @@ type BindRuntimeDomEventsOptions = {
   cleanupCallbacks: Array<() => void>;
   touchInteraction: () => void;
   runAction: (action: RuntimeAction) => void | Promise<void>;
+  shouldSkipDialogue?: () => boolean;
+  skipDialogue?: () => void;
 };
 
 /**
  * DOM dataset 값이 런타임에서 지원하는 관찰 영역 ID인지 확인합니다.
  */
 function isInteractiveAreaId(value: string | undefined): value is InteractiveAreaId {
-  return interactiveAreaIds.some((areaId) => areaId === value);
+  return typeof value === "string" && value.length > 0;
 }
 
 /**
  * DOM dataset 값이 런타임에서 지원하는 명령 버튼 ID인지 확인합니다.
  */
 function isRuntimeCommandId(value: string | undefined): value is RuntimeCommandId {
-  return commandIds.some((commandId) => commandId === value);
+  return typeof value === "string" && value.length > 0;
 }
 
 export function bindRuntimeDomEvents({
@@ -47,6 +48,8 @@ export function bindRuntimeDomEvents({
   cleanupCallbacks,
   touchInteraction,
   runAction,
+  shouldSkipDialogue,
+  skipDialogue,
 }: BindRuntimeDomEventsOptions) {
   if (elements.restoreBadge) {
     const handleRestoreClick = () => {
@@ -68,6 +71,12 @@ export function bindRuntimeDomEvents({
   });
 
   const handleSpriteClick = (event: MouseEvent) => {
+    if (shouldSkipDialogue?.()) {
+      event.preventDefault();
+      skipDialogue?.();
+      return;
+    }
+
     if (event.detail === 0) {
       eventBus.emit("character:click");
       return;

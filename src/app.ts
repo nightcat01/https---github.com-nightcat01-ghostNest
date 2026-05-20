@@ -1,10 +1,7 @@
 import { rine } from "./characters/rine/index.js";
-import { fortunePlugin } from "./plugins/fortune/index.js";
-import { systemInfoPlugin } from "./plugins/systemInfo/index.js";
-import { weatherPlugin } from "./plugins/weather/index.js";
-import { timerPlugin } from "./plugins/timer/index.js";
-import { createMinigamePlugin } from "./plugins/minigame/index.js";
 import type { GhostRuntime } from "./core/types.js";
+import { createDemoPlugins } from "./demo/demoPlugins.js";
+import { createDemoRules } from "./demo/demoRules.js";
 import { createGhostRuntime } from "./runtime/createGhostRuntime.js";
 
 type GhostNestWindow = Window & {
@@ -15,42 +12,51 @@ const ghostNestWindow = window as GhostNestWindow;
 
 ghostNestWindow.__ghostNestRuntime__?.destroy();
 
-const plugins = [
-  fortunePlugin,
-  systemInfoPlugin,
-  weatherPlugin,
-  timerPlugin,
-  createMinigamePlugin("가위", (result) => console.log(result)),
-  createMinigamePlugin("바위", (result) => console.log(result)),
-  createMinigamePlugin("보", (result) => console.log(result)),
-];
-
 ghostNestWindow.__ghostNestRuntime__ = createGhostRuntime({
   character: rine,
-  plugins,
+  plugins: createDemoPlugins(),
+  rules: createDemoRules(),
   selectors: {
     stage: "#characterStage",
     sprite: "#characterSprite",
     spriteImage: "#characterSpriteImage",
+    speechBalloon: "#speechBalloon",
     speakerName: "#speakerName",
     speechText: "#speechText",
     balloonActionMenu: "#balloonActionMenu",
-    eventLog: "#eventLog",
+    panelActionMenu: "#panelActionMenu",
     menuButtons: "[data-command], [data-plugin]",
-    hitboxEditor: "#hitboxEditor",
-    hitboxEditorAdd: "#hitboxEditorAdd",
-    hitboxEditorClose: "#hitboxEditorClose",
-    hitboxEditorBody: "#hitboxEditorBody",
-    hitboxEditorCopy: "#hitboxEditorCopy",
     restoreBadge: "#restoreBadge",
     observeAreas: "[data-observe-area]",
-    statusMode: "#statusMode",
-    statusExpression: "#statusExpression",
-    statusVisibility: "#statusVisibility",
-    statusLastEvent: "#statusLastEvent",
-    statusIdleCountdown: "#statusIdleCountdown",
-    statusRandomPrompt: "#statusRandomPrompt",
-    statusActionTimers: "#statusActionTimers",
+  },
+  devtools: {
+    diagnostics: {
+      selectors: {
+        eventLog: "#eventLog",
+        statusMode: "#statusMode",
+        statusExpression: "#statusExpression",
+        statusVisibility: "#statusVisibility",
+        statusLastEvent: "#statusLastEvent",
+        statusIdleCountdown: "#statusIdleCountdown",
+        statusRandomPrompt: "#statusRandomPrompt",
+        statusActionTimers: "#statusActionTimers",
+      },
+    },
+    hitboxEditor: {
+      selectors: {
+        editor: "#hitboxEditor",
+        addButton: "#hitboxEditorAdd",
+        closeButton: "#hitboxEditorClose",
+        body: "#hitboxEditorBody",
+        copyButton: "#hitboxEditorCopy",
+      },
+    },
+  },
+  managementMenu: {
+    defaultDisplay: "balloon",
+    displays: {
+      "system-tools": "panel",
+    },
   },
   features: {
     commandHoverDescription: true,

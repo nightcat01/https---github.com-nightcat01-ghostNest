@@ -1,0 +1,1 @@
+{"version":3,"file":"floatingLayout.d.ts","sourceRoot":"","sources":["../../src/runtime/floatingLayout.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,eAAe,EAAE,MAAM,kBAAkB,CAAC;AAExD,KAAK,qBAAqB,GAAG;IAC3B,QAAQ,EAAE,eAAe,CAAC;CAC3B,CAAC;AAwEF,wBAAgB,kBAAkB,CAAC,EAAE,QAAQ,EAAE,EAAE,qBAAqB,cAuDrE"}

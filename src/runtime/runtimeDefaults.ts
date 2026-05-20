@@ -1,7 +1,5 @@
 import type {
   CharacterSpriteSizeOptions,
-  InteractiveAreaId,
-  RuntimeCommandId,
   RuntimeFeatureOptions,
   RuntimeTimingOptions,
   SpeechTypingOptions,
@@ -32,7 +30,3 @@ export const defaultTyping = {
   enabled: true,
   interval: 28,
 } satisfies SpeechTypingOptions;
-
-export const interactiveAreaIds = ["runtimeTitle", "eventLog", "commandMenu"] satisfies InteractiveAreaId[];
-
-export const commandIds = ["fortune", "line", "hide"] satisfies RuntimeCommandId[];

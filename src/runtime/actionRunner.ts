@@ -1,7 +1,11 @@
 import type {
+  BuiltinRuntimeAction,
   DialogueEngine,
+  ManagementMenuItem,
+  ManagementMenuOptions,
   DialogueMessage,
   RuntimeAction,
+  RuntimeActionHandler,
   RuntimeEventMap,
   RuntimeEventName,
   RuntimePlugin,
@@ -9,7 +13,15 @@ import type {
   StorageAdapter,
 } from "../core/types.js";
 import type { RuntimeElements } from "./domElements.js";
-import { closeManagementMenu, renderManagementMenu } from "./managementMenu.js";
+import { closeManagementMenu, renderManagementMenu, resolveManagementMenuDisplay } from "./managementMenu.js";
+import {
+  cloneManagementMenuOptions,
+  managementMenuStorageKey,
+  readStoredManagementMenuOptions,
+  readStoredRuntimeUiPreferences,
+  runtimeUiStorageKey,
+  type RuntimeUiPreferences,
+} from "./runtimePreferences.js";
 
 type RuntimeEventEmitter = {
   emit: <TEventName extends RuntimeEventName>(
@@ -25,15 +37,25 @@ type ActionRunnerContext = {
   pluginRegistry: Map<string, RuntimePlugin>;
   storageAdapter: StorageAdapter;
   actionTimers: Map<string, number>;
+  managementMenu?: ManagementMenuOptions | undefined;
   eventBus: RuntimeEventEmitter;
   renderSpeech: (message: DialogueMessage) => void;
+  renderPreviewSpeech: (message: DialogueMessage) => void;
   renderCharacterState: () => void;
+  setLayerAnimationActive: (layerId: string, isActive: boolean) => void;
   addLog: (label: string) => void;
   touchInteraction: () => void;
 };
 
 function getRuntimeUi(target: string) {
   return document.querySelector<HTMLElement>(`[data-runtime-ui="${target}"]`);
+}
+
+function getManagementMenuTargets(elements: RuntimeElements) {
+  return {
+    balloon: elements.balloonActionMenu,
+    panel: elements.panelActionMenu,
+  };
 }
 
 export function createActionRunner(context: ActionRunnerContext) {
@@ -44,194 +66,487 @@ export function createActionRunner(context: ActionRunnerContext) {
     pluginRegistry,
     storageAdapter,
     actionTimers,
+    managementMenu,
     eventBus,
     renderSpeech,
+    renderPreviewSpeech,
     renderCharacterState,
+    setLayerAnimationActive,
     addLog,
     touchInteraction,
   } = context;
 
+  const actionHandlers = new Map<string, RuntimeActionHandler>();
+  const defaultManagementMenuOptions = cloneManagementMenuOptions(managementMenu);
+  const managementMenuOptions = cloneManagementMenuOptions(defaultManagementMenuOptions);
+  const runtimeUiPreferences: RuntimeUiPreferences = {};
+
+  const managementMenuOptionsReady = loadManagementMenuOptions();
+  const runtimeUiPreferencesReady = loadRuntimeUiPreferences();
+  let pendingMenuPreviewItemId: string | null = null;
+  let lastPreviewedMenuItemId: string | null = null;
+  let menuPreviewTimerId: number | null = null;
+
+  async function loadManagementMenuOptions() {
+    try {
+      const storedOptions = readStoredManagementMenuOptions(
+        await storageAdapter.get(managementMenuStorageKey),
+      );
+
+      if (storedOptions.defaultDisplay) {
+        managementMenuOptions.defaultDisplay = storedOptions.defaultDisplay;
+      }
+
+      if (storedOptions.displays) {
+        managementMenuOptions.displays = {
+          ...managementMenuOptions.displays,
+          ...storedOptions.displays,
+        };
+      }
+    } catch (error) {
+      console.warn("[GhostNest] Failed to load management menu options.", error);
+    }
+  }
+
+  async function saveManagementMenuOptions() {
+    try {
+      await storageAdapter.set(managementMenuStorageKey, {
+        defaultDisplay: managementMenuOptions.defaultDisplay,
+        displays: managementMenuOptions.displays,
+      });
+    } catch (error) {
+      console.warn("[GhostNest] Failed to save management menu options.", error);
+    }
+  }
+
+  function applyBalloonTheme(theme: string | undefined) {
+    if (!theme || theme === "default") {
+      delete elements.stage.dataset.balloonTheme;
+      return;
+    }
+
+    elements.stage.dataset.balloonTheme = theme;
+  }
+
+  function applyBalloonFontSize(size: string | undefined) {
+    if (!size || size === "default") {
+      delete elements.stage.dataset.balloonFontSize;
+      if (elements.panelActionMenu) {
+        delete elements.panelActionMenu.dataset.balloonFontSize;
+      }
+      return;
+    }
+
+    elements.stage.dataset.balloonFontSize = size;
+    if (elements.panelActionMenu) {
+      elements.panelActionMenu.dataset.balloonFontSize = size;
+    }
+  }
+
+  function applyCharacterPosition(position: RuntimeUiPreferences["characterPosition"]) {
+    if (!position) {
+      return;
+    }
+
+    elements.stage.style.setProperty("--character-stage-x", `${position.x}px`);
+    elements.stage.style.setProperty("--character-stage-y", `${position.y}px`);
+    elements.stage.dataset.positionMode = "custom";
+  }
+
+  function applyRuntimeUiPreferences() {
+    applyBalloonTheme(runtimeUiPreferences.balloonTheme);
+    applyBalloonFontSize(runtimeUiPreferences.balloonFontSize);
+    applyCharacterPosition(runtimeUiPreferences.characterPosition);
+  }
+
+  async function loadRuntimeUiPreferences() {
+    try {
+      const storedPreferences = readStoredRuntimeUiPreferences(
+        await storageAdapter.get(runtimeUiStorageKey),
+      );
+
+      if (storedPreferences.balloonTheme) {
+        runtimeUiPreferences.balloonTheme = storedPreferences.balloonTheme;
+      } else {
+        delete runtimeUiPreferences.balloonTheme;
+      }
+
+      if (storedPreferences.balloonFontSize) {
+        runtimeUiPreferences.balloonFontSize = storedPreferences.balloonFontSize;
+      } else {
+        delete runtimeUiPreferences.balloonFontSize;
+      }
+
+      if (storedPreferences.characterPosition) {
+        runtimeUiPreferences.characterPosition = storedPreferences.characterPosition;
+      } else {
+        delete runtimeUiPreferences.characterPosition;
+      }
+
+      applyRuntimeUiPreferences();
+    } catch (error) {
+      console.warn("[GhostNest] Failed to load runtime UI options.", error);
+    }
+  }
+
+  async function saveRuntimeUiPreferences() {
+    try {
+      await storageAdapter.set(runtimeUiStorageKey, runtimeUiPreferences);
+    } catch (error) {
+      console.warn("[GhostNest] Failed to save runtime UI options.", error);
+    }
+  }
+
+  function resetManagementMenuOptions() {
+    if (defaultManagementMenuOptions.defaultDisplay) {
+      managementMenuOptions.defaultDisplay = defaultManagementMenuOptions.defaultDisplay;
+    } else {
+      delete managementMenuOptions.defaultDisplay;
+    }
+
+    managementMenuOptions.displays = { ...defaultManagementMenuOptions.displays };
+  }
+
+  function resetRuntimeUiPreferences() {
+    delete runtimeUiPreferences.balloonTheme;
+    delete runtimeUiPreferences.balloonFontSize;
+    delete runtimeUiPreferences.characterPosition;
+    applyRuntimeUiPreferences();
+    elements.stage.style.removeProperty("--character-stage-x");
+    elements.stage.style.removeProperty("--character-stage-y");
+    delete elements.stage.dataset.positionMode;
+  }
+
+  function registerAction(type: string, handler: RuntimeActionHandler) {
+    actionHandlers.set(type, handler);
+  }
+
+  function previewManagementMenuItem(item: ManagementMenuItem) {
+    if (!item.description) {
+      return;
+    }
+
+    if (item.id === pendingMenuPreviewItemId || item.id === lastPreviewedMenuItemId) {
+      return;
+    }
+
+    if (menuPreviewTimerId !== null) {
+      window.clearTimeout(menuPreviewTimerId);
+    }
+
+    pendingMenuPreviewItemId = item.id;
+    menuPreviewTimerId = window.setTimeout(async () => {
+      menuPreviewTimerId = null;
+
+      if (pendingMenuPreviewItemId !== item.id || !item.description) {
+        return;
+      }
+
+      pendingMenuPreviewItemId = null;
+      lastPreviewedMenuItemId = item.id;
+      renderPreviewSpeech(await dialogue.custom(item.description));
+    }, 160);
+  }
+
+  // Register built-in actions
+  registerAction("speak", async (action, _) => {
+    const a = action as Extract<BuiltinRuntimeAction, { type: "speak" }>;
+    renderSpeech(await dialogue.line(a.category));
+  });
+
+  registerAction("speak_text", async (action, _) => {
+    const a = action as Extract<BuiltinRuntimeAction, { type: "speak_text" }>;
+    renderSpeech(await dialogue.custom(a.text));
+  });
+
+  registerAction("speak_script", async (action, _) => {
+    const a = action as Extract<BuiltinRuntimeAction, { type: "speak_script" }>;
+    const message = await dialogue.custom(a.text);
+    renderSpeech({ ...message, script: a.script });
+  });
+
+  registerAction("change_expression", (action, _) => {
+    const a = action as Extract<BuiltinRuntimeAction, { type: "change_expression" }>;
+    state.expression = a.expression;
+    if (a.clearTouchedPart) {
+      state.lastTouchedPart = null;
+    }
+    renderCharacterState();
+  });
+
+  registerAction("set_touched_part", (action, _) => {
+    const a = action as Extract<BuiltinRuntimeAction, { type: "set_touched_part" }>;
+    state.lastTouchedPart = a.part;
+    renderCharacterState();
+  });
+
+  registerAction("toggle_hidden", () => {
+    state.isHidden = !state.isHidden;
+    elements.stage.classList.toggle("is-hidden", state.isHidden);
+
+    if (elements.restoreBadge) {
+      elements.restoreBadge.hidden = !state.isHidden;
+    }
+  });
+
+  registerAction("call_plugin", async (action, _) => {
+    const a = action as Extract<BuiltinRuntimeAction, { type: "call_plugin" }>;
+    const plugin = pluginRegistry.get(a.pluginId);
+
+    if (!plugin) {
+      renderSpeech(await dialogue.custom(`아직 '${a.pluginId}' 기능은 연결되어 있지 않아요.`));
+      return;
+    }
+
+    const originalExpression = state.expression;
+    state.expression = "thinking";
+    renderCharacterState();
+
+    try {
+      const result = await plugin.execute();
+
+      if (result.expression) {
+        state.expression = result.expression;
+      } else {
+        state.expression = originalExpression;
+      }
+
+      state.lastTouchedPart = null;
+      renderCharacterState();
+      
+      const message = await dialogue.custom(`${result.title}. ${result.message}`);
+      renderSpeech(result.script ? { ...message, script: result.script } : message);
+      
+    } catch (err) {
+      state.expression = "surprised";
+      renderCharacterState();
+      renderSpeech(await dialogue.custom(`'${a.pluginId}' 기능 실행 중 문제가 발생했어요.`));
+    }
+  });
+
+  registerAction("log", (action, _) => {
+    const a = action as Extract<BuiltinRuntimeAction, { type: "log" }>;
+    addLog(a.label);
+  });
+
+  registerAction("touch_interaction", () => {
+    touchInteraction();
+  });
+
+  registerAction("mark_prompted", () => {
+    state.lastPromptedAt = Date.now();
+  });
+
+  registerAction("play_animation", (action, _) => {
+    const a = action as Extract<BuiltinRuntimeAction, { type: "play_animation" }>;
+    elements.sprite.dataset.animation = a.animation;
+
+    if (a.duration) {
+      window.setTimeout(() => {
+        if (elements.sprite.dataset.animation === a.animation) {
+          delete elements.sprite.dataset.animation;
+        }
+      }, a.duration);
+    }
+  });
+
+  registerAction("play_layer_animation", (action, _) => {
+    const a = action as Extract<BuiltinRuntimeAction, { type: "play_layer_animation" }>;
+    const isActive = a.active ?? true;
+    const timerKey = `layer_animation:${a.layerId}`;
+    const existingTimer = actionTimers.get(timerKey);
+
+    if (existingTimer) {
+      window.clearTimeout(existingTimer);
+      actionTimers.delete(timerKey);
+    }
+
+    setLayerAnimationActive(a.layerId, isActive);
+
+    if (isActive && a.duration) {
+      const timerId = window.setTimeout(() => {
+        setLayerAnimationActive(a.layerId, false);
+        actionTimers.delete(timerKey);
+      }, a.duration);
+      actionTimers.set(timerKey, timerId);
+    }
+  });
+
+  registerAction("open_ui", (action, _) => {
+    const a = action as Extract<BuiltinRuntimeAction, { type: "open_ui" }>;
+    const targetElement = getRuntimeUi(a.target);
+    targetElement?.removeAttribute("hidden");
+    elements.stage.dispatchEvent(new CustomEvent("ghostnest:open-ui", { detail: a }));
+  });
+
+  registerAction("close_ui", (action, _) => {
+    const a = action as Extract<BuiltinRuntimeAction, { type: "close_ui" }>;
+    const targetElement = getRuntimeUi(a.target);
+    targetElement?.setAttribute("hidden", "");
+    elements.stage.dispatchEvent(new CustomEvent("ghostnest:close-ui", { detail: a }));
+  });
+
+  registerAction("navigate", (action, _) => {
+    const a = action as Extract<BuiltinRuntimeAction, { type: "navigate" }>;
+    window.location.assign(a.route);
+  });
+
+  registerAction("set_state", (action, _) => {
+    const a = action as Extract<BuiltinRuntimeAction, { type: "set_state" }>;
+    state.mode = a.state;
+    elements.stage.dataset.state = a.state;
+  });
+
+  registerAction("emit_event", (action, _) => {
+    const a = action as Extract<BuiltinRuntimeAction, { type: "emit_event" }>;
+    eventBus.emit(a.event, a.payload as never);
+  });
+
+  registerAction("play_sound", (action, _) => {
+    const a = action as Extract<BuiltinRuntimeAction, { type: "play_sound" }>;
+    const audio = new Audio(a.sound);
+    audio.volume = a.volume ?? 1;
+    void audio.play();
+  });
+
+  registerAction("save_data", async (action, _) => {
+    const a = action as Extract<BuiltinRuntimeAction, { type: "save_data" }>;
+    state.data[a.key] = a.value;
+    await storageAdapter.set(a.key, a.value);
+  });
+
+  registerAction("load_data", async (action, _) => {
+    const a = action as Extract<BuiltinRuntimeAction, { type: "load_data" }>;
+    const value = await storageAdapter.get(a.key);
+    state.data[a.saveTo ?? a.key] = value;
+
+    if (a.speak) {
+      renderSpeech(await dialogue.custom(value === null ? "저장된 값이 아직 없어요." : String(value)));
+    }
+  });
+
+  registerAction("show_notification", async (action, _) => {
+    const a = action as Extract<BuiltinRuntimeAction, { type: "show_notification" }>;
+    elements.stage.dispatchEvent(new CustomEvent("ghostnest:notification", { detail: a }));
+
+    if ("Notification" in window && Notification.permission === "granted") {
+      new Notification(a.title, { body: a.message });
+      return;
+    }
+
+    renderSpeech(await dialogue.custom(`${a.title}. ${a.message}`));
+  });
+
+  registerAction("start_timer", (action, context) => {
+    const a = action as Extract<BuiltinRuntimeAction, { type: "start_timer" }>;
+    const existingTimer = actionTimers.get(a.timer);
+
+    if (existingTimer) {
+      window.clearTimeout(existingTimer);
+    }
+
+    const timerId = window.setTimeout(() => {
+      actionTimers.delete(a.timer);
+      void context.runActions(a.actions);
+    }, a.duration);
+
+    actionTimers.set(a.timer, timerId);
+  });
+
+  registerAction("stop_timer", (action, _) => {
+    const a = action as Extract<BuiltinRuntimeAction, { type: "stop_timer" }>;
+    const timerId = actionTimers.get(a.timer);
+
+    if (timerId) {
+      window.clearTimeout(timerId);
+      actionTimers.delete(a.timer);
+    }
+  });
+
+  registerAction("move_character", async (action, _) => {
+    const a = action as Extract<BuiltinRuntimeAction, { type: "move_character" }>;
+    await runtimeUiPreferencesReady;
+
+    runtimeUiPreferences.characterPosition = { x: a.x, y: a.y };
+    applyCharacterPosition(runtimeUiPreferences.characterPosition);
+    await saveRuntimeUiPreferences();
+  });
+
+  registerAction("change_balloon", async (action, _) => {
+    const a = action as Extract<BuiltinRuntimeAction, { type: "change_balloon" }>;
+    await runtimeUiPreferencesReady;
+
+    runtimeUiPreferences.balloonTheme = a.theme;
+    applyBalloonTheme(runtimeUiPreferences.balloonTheme);
+    await saveRuntimeUiPreferences();
+  });
+
+  registerAction("change_balloon_font_size", async (action, _) => {
+    const a = action as Extract<BuiltinRuntimeAction, { type: "change_balloon_font_size" }>;
+    await runtimeUiPreferencesReady;
+
+    runtimeUiPreferences.balloonFontSize = a.size;
+    applyBalloonFontSize(runtimeUiPreferences.balloonFontSize);
+    await saveRuntimeUiPreferences();
+  });
+
+  registerAction("open_management_menu", async (action, context) => {
+    const a = action as Extract<BuiltinRuntimeAction, { type: "open_management_menu" }>;
+    await managementMenuOptionsReady;
+
+    renderManagementMenu({
+      action: a,
+      targets: getManagementMenuTargets(elements),
+      runActions: context.runActions,
+      previewItem: previewManagementMenuItem,
+      display: resolveManagementMenuDisplay(a, managementMenuOptions),
+    });
+  });
+
+  registerAction("set_management_menu_display", async (action, _) => {
+    const a = action as Extract<BuiltinRuntimeAction, { type: "set_management_menu_display" }>;
+    await managementMenuOptionsReady;
+
+    if (a.menuId) {
+      managementMenuOptions.displays = {
+        ...managementMenuOptions.displays,
+        [a.menuId]: a.display,
+      };
+      await saveManagementMenuOptions();
+      return;
+    }
+
+    managementMenuOptions.defaultDisplay = a.display;
+    await saveManagementMenuOptions();
+  });
+
+  registerAction("reset_runtime_ui", async () => {
+    await Promise.all([managementMenuOptionsReady, runtimeUiPreferencesReady]);
+    resetManagementMenuOptions();
+    resetRuntimeUiPreferences();
+    await Promise.all([
+      storageAdapter.remove(managementMenuStorageKey),
+      storageAdapter.remove(runtimeUiStorageKey),
+    ]);
+  });
+
+  registerAction("close_management_menu", () => {
+    if (menuPreviewTimerId !== null) {
+      window.clearTimeout(menuPreviewTimerId);
+      menuPreviewTimerId = null;
+    }
+    pendingMenuPreviewItemId = null;
+    lastPreviewedMenuItemId = null;
+    closeManagementMenu(getManagementMenuTargets(elements));
+  });
+
   async function runAction(action: RuntimeAction) {
-    switch (action.type) {
-      case "speak":
-        renderSpeech(await dialogue.line(action.category));
-        return;
-      case "speak_text":
-        renderSpeech(await dialogue.custom(action.text));
-        return;
-      case "change_expression":
-        state.expression = action.expression;
-
-        if (action.clearTouchedPart) {
-          state.lastTouchedPart = null;
-        }
-
-        renderCharacterState();
-        return;
-      case "set_touched_part":
-        state.lastTouchedPart = action.part;
-        renderCharacterState();
-        return;
-      case "toggle_hidden":
-        state.isHidden = !state.isHidden;
-        elements.stage.classList.toggle("is-hidden", state.isHidden);
-        return;
-      case "call_plugin":
-        {
-          const plugin = pluginRegistry.get(action.pluginId);
-
-          if (!plugin) {
-            renderSpeech(await dialogue.custom(`아직 '${action.pluginId}' 기능은 연결되어 있지 않아요.`));
-            return;
-          }
-
-          const originalExpression = state.expression;
-          state.expression = "thinking";
-          renderCharacterState();
-
-          try {
-            const result = await plugin.execute();
-
-            if (result.expression) {
-              state.expression = result.expression;
-            } else {
-              state.expression = originalExpression;
-            }
-
-            state.lastTouchedPart = null;
-            renderCharacterState();
-            renderSpeech(await dialogue.custom(`${result.title}. ${result.message}`));
-          } catch (err) {
-            state.expression = "surprised";
-            renderCharacterState();
-            renderSpeech(await dialogue.custom(`'${action.pluginId}' 기능 실행 중 문제가 발생했어요.`));
-          }
-        }
-        return;
-      case "log":
-        addLog(action.label);
-        return;
-      case "touch_interaction":
-        touchInteraction();
-        return;
-      case "mark_prompted":
-        state.lastPromptedAt = Date.now();
-        return;
-      case "play_animation":
-        elements.sprite.dataset.animation = action.animation;
-
-        if (action.duration) {
-          window.setTimeout(() => {
-            if (elements.sprite.dataset.animation === action.animation) {
-              delete elements.sprite.dataset.animation;
-            }
-          }, action.duration);
-        }
-        return;
-      case "open_ui":
-        {
-          const targetElement = getRuntimeUi(action.target);
-          targetElement?.removeAttribute("hidden");
-          elements.stage.dispatchEvent(new CustomEvent("ghostnest:open-ui", { detail: action }));
-        }
-        return;
-      case "close_ui":
-        {
-          const targetElement = getRuntimeUi(action.target);
-          targetElement?.setAttribute("hidden", "");
-          elements.stage.dispatchEvent(new CustomEvent("ghostnest:close-ui", { detail: action }));
-        }
-        return;
-      case "navigate":
-        window.location.assign(action.route);
-        return;
-      case "set_state":
-        state.mode = action.state;
-        elements.stage.dataset.state = action.state;
-        return;
-      case "emit_event":
-        eventBus.emit(action.event, action.payload as never);
-        return;
-      case "play_sound":
-        {
-          const audio = new Audio(action.sound);
-          audio.volume = action.volume ?? 1;
-          void audio.play();
-        }
-        return;
-      case "save_data":
-        state.data[action.key] = action.value;
-        await storageAdapter.set(action.key, action.value);
-        return;
-      case "load_data":
-        {
-          const value = await storageAdapter.get(action.key);
-          state.data[action.saveTo ?? action.key] = value;
-
-          if (action.speak) {
-            renderSpeech(await dialogue.custom(value === null ? "저장된 값이 아직 없어요." : String(value)));
-          }
-        }
-        return;
-      case "show_notification":
-        elements.stage.dispatchEvent(new CustomEvent("ghostnest:notification", { detail: action }));
-
-        if ("Notification" in window && Notification.permission === "granted") {
-          new Notification(action.title, { body: action.message });
-          return;
-        }
-
-        renderSpeech(await dialogue.custom(`${action.title}. ${action.message}`));
-        return;
-      case "start_timer":
-        {
-          const existingTimer = actionTimers.get(action.timer);
-
-          if (existingTimer) {
-            window.clearTimeout(existingTimer);
-          }
-
-          const timerId = window.setTimeout(() => {
-            actionTimers.delete(action.timer);
-            void runActions(action.actions);
-          }, action.duration);
-
-          actionTimers.set(action.timer, timerId);
-        }
-        return;
-      case "stop_timer":
-        {
-          const timerId = actionTimers.get(action.timer);
-
-          if (timerId) {
-            window.clearTimeout(timerId);
-            actionTimers.delete(action.timer);
-          }
-        }
-        return;
-      case "move_character":
-        elements.stage.style.setProperty("--character-stage-x", `${action.x}px`);
-        elements.stage.style.setProperty("--character-stage-y", `${action.y}px`);
-        elements.stage.dataset.positionMode = "custom";
-        return;
-      case "change_balloon":
-        if (action.theme === "default") {
-          delete elements.stage.dataset.balloonTheme;
-          return;
-        }
-
-        elements.stage.dataset.balloonTheme = action.theme;
-        return;
-      case "open_management_menu":
-        renderManagementMenu({
-          action,
-          menuElement: elements.balloonActionMenu,
-          runActions,
-        });
-        return;
-      case "close_management_menu":
-        closeManagementMenu(elements.balloonActionMenu);
-        return;
+    const handler = actionHandlers.get(action.type);
+    
+    if (handler) {
+      await handler(action, { runActions });
+    } else {
+      console.warn(`[GhostNest] 알 수 없는 액션 타입입니다: ${action.type}`, action);
     }
   }
 
@@ -244,5 +559,6 @@ export function createActionRunner(context: ActionRunnerContext) {
   return {
     runAction,
     runActions,
+    registerAction,
   };
 }

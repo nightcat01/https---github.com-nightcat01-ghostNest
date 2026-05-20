@@ -1,5 +1,5 @@
-import type { CharacterDefinition, CharacterTouchArea } from "../core/types.js";
-import type { RuntimeElements } from "./domElements.js";
+import type { CharacterDefinition, CharacterTouchArea, HitboxEditorDevtoolSelectors } from "../core/types.js";
+import type { RuntimeElements } from "../runtime/domElements.js";
 
 const defaultHitAreas: Record<string, CharacterTouchArea> = {
   head: { minX: 0, maxX: 1, minY: 0, maxY: 0.36 },
@@ -12,7 +12,80 @@ const defaultParts = Object.keys(defaultHitAreas);
 type InitHitboxEditorOptions = {
   elements: RuntimeElements;
   character: CharacterDefinition;
+  selectors: HitboxEditorDevtoolSelectors;
 };
+
+function optionalElement<TElement extends Element>(selector: string | undefined): TElement | null {
+  if (!selector) {
+    return null;
+  }
+
+  return document.querySelector<TElement>(selector);
+}
+
+function getStorageKey(character: CharacterDefinition) {
+  return `ghostNest:${character.profile.id}:hitAreas`;
+}
+
+function isHitArea(value: unknown): value is CharacterTouchArea {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const area = value as Record<string, unknown>;
+  return (
+    typeof area.minX === "number" &&
+    typeof area.maxX === "number" &&
+    typeof area.minY === "number" &&
+    typeof area.maxY === "number"
+  );
+}
+
+function normalizeHitAreas(value: unknown) {
+  const source = value && typeof value === "object" && "hitAreas" in value
+    ? (value as { hitAreas?: unknown }).hitAreas
+    : value;
+
+  if (!source || typeof source !== "object") {
+    return null;
+  }
+
+  const hitAreas: Record<string, CharacterTouchArea> = {};
+
+  Object.entries(source as Record<string, unknown>).forEach(([part, area]) => {
+    if (isHitArea(area)) {
+      hitAreas[part] = area;
+    }
+  });
+
+  return Object.keys(hitAreas).length > 0 ? hitAreas : null;
+}
+
+function loadStoredHitAreas(character: CharacterDefinition) {
+  try {
+    const rawValue = window.localStorage.getItem(getStorageKey(character));
+
+    if (!rawValue) {
+      return null;
+    }
+
+    return normalizeHitAreas(JSON.parse(rawValue));
+  } catch {
+    return null;
+  }
+}
+
+function saveStoredHitAreas(character: CharacterDefinition, hitAreas: Partial<Record<string, CharacterTouchArea>>) {
+  const serializableHitAreas: Record<string, CharacterTouchArea> = {};
+
+  Object.entries(hitAreas).forEach(([part, area]) => {
+    if (area) {
+      serializableHitAreas[part] = area;
+    }
+  });
+
+  window.localStorage.setItem(getStorageKey(character), JSON.stringify({ hitAreas: serializableHitAreas }));
+}
 
 function getPartColor(part: string, alpha = 0.4) {
   if (part === "head") return `rgba(255, 0, 0, ${alpha})`;
@@ -53,6 +126,15 @@ function ensureHitAreas(character: CharacterDefinition) {
     character.assets = { expressions: { neutral: "", happy: "", thinking: "", surprised: "" }, alt: "" };
   }
 
+  const storedHitAreas = loadStoredHitAreas(character);
+
+  if (storedHitAreas) {
+    character.assets.hitAreas = {
+      ...character.assets.hitAreas,
+      ...storedHitAreas,
+    };
+  }
+
   if (!character.assets.hitAreas) {
     character.assets.hitAreas = {};
   }
@@ -60,9 +142,18 @@ function ensureHitAreas(character: CharacterDefinition) {
   return character.assets.hitAreas;
 }
 
-export function initHitboxEditor({ elements, character }: InitHitboxEditorOptions) {
+export function initHitboxEditor({ elements, character, selectors }: InitHitboxEditorOptions) {
+  const cleanupCallbacks: Array<() => void> = [];
+  const editorElements = {
+    editor: optionalElement<HTMLElement>(selectors.editor),
+    addButton: optionalElement<HTMLButtonElement>(selectors.addButton),
+    closeButton: optionalElement<HTMLElement>(selectors.closeButton),
+    body: optionalElement<HTMLElement>(selectors.body),
+    copyButton: optionalElement<HTMLElement>(selectors.copyButton),
+  };
+
   const renderDebugHitAreas = () => {
-    const isEditorOpen = elements.hitboxEditor && !elements.hitboxEditor.hidden;
+    const isEditorOpen = editorElements.editor && !editorElements.editor.hidden;
 
     if (!isEditorOpen) {
       elements.sprite.querySelectorAll(".debug-hit-area").forEach((element) => element.remove());
@@ -107,15 +198,92 @@ export function initHitboxEditor({ elements, character }: InitHitboxEditorOption
     });
   };
 
-  if (!elements.hitboxEditor || !elements.hitboxEditorBody) {
+  if (!editorElements.editor || !editorElements.body) {
     renderDebugHitAreas();
-    return { renderDebugHitAreas };
+    return {
+      renderDebugHitAreas,
+      destroy() {
+        elements.sprite.querySelectorAll(".debug-hit-area").forEach((element) => element.remove());
+      },
+    };
+  }
+
+  const editor = editorElements.editor;
+  const header = editor.querySelector(".hitbox-editor-header") as HTMLElement | null;
+
+  if (header) {
+    header.style.cursor = "grab";
+
+    let isDragging = false;
+    let startX = 0;
+    let startY = 0;
+    let initialX = 0;
+    let initialY = 0;
+
+    const handlePointerDown = (e: PointerEvent) => {
+      if ((e.target as HTMLElement).tagName.toLowerCase() === "button") {
+        return;
+      }
+
+      isDragging = true;
+      startX = e.clientX;
+      startY = e.clientY;
+
+      const rect = editor.getBoundingClientRect();
+      initialX = rect.left;
+      initialY = rect.top;
+
+      editor.style.right = "auto";
+      editor.style.bottom = "auto";
+      editor.style.left = `${initialX}px`;
+      editor.style.top = `${initialY}px`;
+      editor.style.margin = "0"; // prevent margin offset issues
+
+      header.style.cursor = "grabbing";
+      header.setPointerCapture(e.pointerId);
+    };
+
+    const handlePointerMove = (e: PointerEvent) => {
+      if (!isDragging) return;
+      e.preventDefault();
+
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+
+      editor.style.left = `${initialX + dx}px`;
+      editor.style.top = `${initialY + dy}px`;
+    };
+
+    const handlePointerUp = (e: PointerEvent) => {
+      if (!isDragging) return;
+      isDragging = false;
+      header.style.cursor = "grab";
+      header.releasePointerCapture(e.pointerId);
+    };
+
+    const handlePointerCancel = (e: PointerEvent) => {
+      if (!isDragging) return;
+      isDragging = false;
+      header.style.cursor = "grab";
+      header.releasePointerCapture(e.pointerId);
+    };
+
+    header.addEventListener("pointerdown", handlePointerDown);
+    header.addEventListener("pointermove", handlePointerMove);
+    header.addEventListener("pointerup", handlePointerUp);
+    header.addEventListener("pointercancel", handlePointerCancel);
+    cleanupCallbacks.push(() => {
+      header.removeEventListener("pointerdown", handlePointerDown);
+      header.removeEventListener("pointermove", handlePointerMove);
+      header.removeEventListener("pointerup", handlePointerUp);
+      header.removeEventListener("pointercancel", handlePointerCancel);
+    });
   }
 
   const hitAreas = ensureHitAreas(character);
 
   const renderEditorParts = () => {
-    elements.hitboxEditorBody?.replaceChildren();
+    editorElements.body?.replaceChildren();
 
     const currentParts = Object.keys(hitAreas);
     defaultParts.forEach((part) => {
@@ -146,6 +314,7 @@ export function initHitboxEditor({ elements, character }: InitHitboxEditorOption
         deleteButton.textContent = "삭제";
         deleteButton.addEventListener("click", () => {
           delete hitAreas[part];
+          saveStoredHitAreas(character, hitAreas);
           renderEditorParts();
           renderDebugHitAreas();
         });
@@ -187,6 +356,7 @@ export function initHitboxEditor({ elements, character }: InitHitboxEditorOption
           }
 
           hitAreas[part][axis] = value;
+          saveStoredHitAreas(character, hitAreas);
           renderDebugHitAreas();
         });
 
@@ -194,11 +364,11 @@ export function initHitboxEditor({ elements, character }: InitHitboxEditorOption
         group.appendChild(row);
       });
 
-      elements.hitboxEditorBody?.appendChild(group);
+      editorElements.body?.appendChild(group);
     });
   };
 
-  elements.hitboxEditorAdd?.addEventListener("click", () => {
+  const handleAddClick = () => {
     if (Object.keys(hitAreas).length >= 10) {
       alert("히트박스는 최대 10개까지만 추가할 수 있습니다.");
       return;
@@ -214,35 +384,54 @@ export function initHitboxEditor({ elements, character }: InitHitboxEditorOption
     }
 
     hitAreas[cleanId] = { minX: 0.4, maxX: 0.6, minY: 0.4, maxY: 0.6 };
+    saveStoredHitAreas(character, hitAreas);
     renderEditorParts();
     renderDebugHitAreas();
-  });
+  };
 
-  elements.hitboxEditorClose?.addEventListener("click", () => {
-    if (elements.hitboxEditor) {
-      elements.hitboxEditor.hidden = true;
+  const handleCloseClick = () => {
+    if (editorElements.editor) {
+      editorElements.editor.hidden = true;
     }
 
     renderDebugHitAreas();
-  });
+  };
 
-  elements.hitboxEditorCopy?.addEventListener("click", () => {
+  const handleCopyClick = () => {
     const data = JSON.stringify({ hitAreas }, null, 2);
+    saveStoredHitAreas(character, hitAreas);
     navigator.clipboard.writeText(data).then(() => {
       alert(`히트박스 설정이 클립보드에 복사되었습니다!\n\n${data}`);
     });
-  });
+  };
 
-  elements.stage.addEventListener("ghostnest:open-ui", (event: Event) => {
+  const handleOpenUi = (event: Event) => {
     const detail = (event as CustomEvent).detail;
     if (detail.target === "hitbox_editor") {
       renderEditorParts();
       renderDebugHitAreas();
     }
+  };
+
+  editorElements.addButton?.addEventListener("click", handleAddClick);
+  editorElements.closeButton?.addEventListener("click", handleCloseClick);
+  editorElements.copyButton?.addEventListener("click", handleCopyClick);
+  elements.stage.addEventListener("ghostnest:open-ui", handleOpenUi);
+  cleanupCallbacks.push(() => {
+    editorElements.addButton?.removeEventListener("click", handleAddClick);
+    editorElements.closeButton?.removeEventListener("click", handleCloseClick);
+    editorElements.copyButton?.removeEventListener("click", handleCopyClick);
+    elements.stage.removeEventListener("ghostnest:open-ui", handleOpenUi);
   });
 
   renderEditorParts();
   renderDebugHitAreas();
 
-  return { renderDebugHitAreas };
+  return {
+    renderDebugHitAreas,
+    destroy() {
+      cleanupCallbacks.forEach((cleanup) => cleanup());
+      elements.sprite.querySelectorAll(".debug-hit-area").forEach((element) => element.remove());
+    },
+  };
 }

@@ -1,37 +1,131 @@
-import type { RuntimeAction } from "../core/types.js";
+import type { ManagementMenuDisplay, ManagementMenuOptions, RuntimeAction } from "../core/types.js";
 
 type OpenManagementMenuAction = Extract<RuntimeAction, { type: "open_management_menu" }>;
 type RunActions = (actions: RuntimeAction[]) => void | Promise<void>;
 
-type RenderManagementMenuOptions = {
-  action: OpenManagementMenuAction;
-  menuElement: HTMLElement | null;
-  runActions: RunActions;
-  currentItems?: OpenManagementMenuAction["items"];
-  parentItems?: OpenManagementMenuAction["items"];
-  menuTitle?: string | undefined;
+export type ManagementMenuTargets = {
+  balloon: HTMLElement | null;
+  panel: HTMLElement | null;
 };
 
-/**
- * 말풍선 내부에 관리 메뉴 버튼을 렌더링합니다.
- */
-export function renderManagementMenu({
-  action,
-  menuElement,
-  runActions,
-  currentItems = action.items,
-  parentItems,
-  menuTitle = action.title,
-}: RenderManagementMenuOptions) {
+type RenderManagementMenuOptions = {
+  action: OpenManagementMenuAction;
+  targets: ManagementMenuTargets;
+  runActions: RunActions;
+  previewItem?: ((item: OpenManagementMenuAction["items"][number]) => void) | undefined;
+  currentItems?: OpenManagementMenuAction["items"];
+  parentItems?: OpenManagementMenuAction["items"] | undefined;
+  menuTitle?: string | undefined;
+  display: ManagementMenuDisplay;
+};
+
+const defaultDisplay: ManagementMenuDisplay = "balloon";
+const panelDragMargin = 16;
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function getMenuElement(targets: ManagementMenuTargets, display: ManagementMenuDisplay) {
+  return display === "panel" ? targets.panel : targets.balloon;
+}
+
+function getOtherMenuElement(targets: ManagementMenuTargets, display: ManagementMenuDisplay) {
+  return display === "panel" ? targets.balloon : targets.panel;
+}
+
+function closeMenuElement(menuElement: HTMLElement | null) {
   if (!menuElement) {
     return;
   }
 
+  menuElement.hidden = true;
   menuElement.replaceChildren();
+}
 
+function makePanelMenuDraggable(menuElement: HTMLElement, handleElement: HTMLElement) {
+  let isDragging = false;
+  let startX = 0;
+  let startY = 0;
+  let initialX = 0;
+  let initialY = 0;
+
+  handleElement.addEventListener("pointerdown", (event) => {
+    isDragging = true;
+    startX = event.clientX;
+    startY = event.clientY;
+
+    const menuRect = menuElement.getBoundingClientRect();
+    const parentRect = (menuElement.offsetParent ?? document.documentElement).getBoundingClientRect();
+
+    initialX = menuRect.left - parentRect.left;
+    initialY = menuRect.top - parentRect.top;
+
+    menuElement.style.right = "auto";
+    menuElement.style.bottom = "auto";
+    menuElement.style.left = `${initialX}px`;
+    menuElement.style.top = `${initialY}px`;
+    menuElement.style.height = `${menuElement.getBoundingClientRect().height}px`;
+    menuElement.dataset.dragging = "true";
+
+    handleElement.setPointerCapture(event.pointerId);
+  });
+
+  handleElement.addEventListener("pointermove", (event) => {
+    if (!isDragging) {
+      return;
+    }
+
+    event.preventDefault();
+
+    const parentRect = (menuElement.offsetParent ?? document.documentElement).getBoundingClientRect();
+    const minX = panelDragMargin;
+    const minY = panelDragMargin;
+    const maxX = Math.max(minX, parentRect.width - menuElement.offsetWidth - panelDragMargin);
+    const maxY = Math.max(minY, parentRect.height - menuElement.offsetHeight - panelDragMargin);
+    const nextX = clamp(initialX + event.clientX - startX, minX, maxX);
+    const nextY = clamp(initialY + event.clientY - startY, minY, maxY);
+
+    menuElement.style.left = `${nextX}px`;
+    menuElement.style.top = `${nextY}px`;
+  });
+
+  const stopDragging = (event: PointerEvent) => {
+    if (!isDragging) {
+      return;
+    }
+
+    isDragging = false;
+    delete menuElement.dataset.dragging;
+    menuElement.style.removeProperty("height");
+    handleElement.releasePointerCapture(event.pointerId);
+  };
+
+  handleElement.addEventListener("pointerup", stopDragging);
+  handleElement.addEventListener("pointercancel", stopDragging);
+}
+
+function renderMenuContent({
+  action,
+  targets,
+  runActions,
+  previewItem,
+  currentItems = action.items,
+  parentItems,
+  menuTitle = action.title,
+  display,
+  menuElement,
+}: RenderManagementMenuOptions & {
+  display: ManagementMenuDisplay;
+  menuElement: HTMLElement;
+}) {
   if (menuTitle) {
     const titleElement = document.createElement("strong");
+    titleElement.className = "management-menu-title";
     titleElement.textContent = menuTitle;
+    if (display === "panel") {
+      makePanelMenuDraggable(menuElement, titleElement);
+    }
     menuElement.append(titleElement);
   }
 
@@ -43,10 +137,12 @@ export function renderManagementMenu({
     backButton.addEventListener("click", () => {
       renderManagementMenu({
         action,
-        menuElement,
+        targets,
         runActions,
+        previewItem,
         currentItems: parentItems,
         menuTitle: action.title,
+        display,
       });
     });
     menuElement.append(backButton);
@@ -57,15 +153,24 @@ export function renderManagementMenu({
     button.type = "button";
     button.textContent = item.label;
     button.dataset.managementAction = item.id;
+    if (item.description) {
+      button.title = item.description;
+      button.addEventListener("pointerenter", () => previewItem?.(item));
+      button.addEventListener("focus", () => previewItem?.(item));
+    }
     button.addEventListener("click", () => {
+      previewItem?.(item);
+
       if (item.children) {
         renderManagementMenu({
           action,
-          menuElement,
+          targets,
           runActions,
+          previewItem,
           currentItems: item.children,
           parentItems: currentItems,
           menuTitle: item.label,
+          display,
         });
         return;
       }
@@ -74,15 +179,53 @@ export function renderManagementMenu({
     });
     menuElement.append(button);
   });
-
-  menuElement.hidden = false;
 }
 
-export function closeManagementMenu(menuElement: HTMLElement | null) {
+export function renderManagementMenu({
+  action,
+  targets,
+  runActions,
+  previewItem,
+  currentItems = action.items,
+  parentItems,
+  menuTitle = action.title,
+  display,
+}: RenderManagementMenuOptions) {
+  const menuElement = getMenuElement(targets, display);
+
   if (!menuElement) {
     return;
   }
 
-  menuElement.hidden = true;
+  closeMenuElement(getOtherMenuElement(targets, display));
   menuElement.replaceChildren();
+  menuElement.dataset.managementMenuDisplay = display;
+  renderMenuContent({
+    action,
+    targets,
+    runActions,
+    previewItem,
+    currentItems,
+    parentItems,
+    menuTitle,
+    display,
+    menuElement,
+  });
+  menuElement.hidden = false;
+}
+
+export function closeManagementMenu(targets: ManagementMenuTargets) {
+  closeMenuElement(targets.balloon);
+  closeMenuElement(targets.panel);
+}
+
+export function resolveManagementMenuDisplay(
+  action: OpenManagementMenuAction,
+  options: ManagementMenuOptions | undefined,
+) {
+  if (action.menuId && options?.displays?.[action.menuId]) {
+    return options.displays[action.menuId] ?? defaultDisplay;
+  }
+
+  return options?.defaultDisplay ?? defaultDisplay;
 }

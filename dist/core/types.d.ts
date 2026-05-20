@@ -1,4 +1,6 @@
-export type RuntimeEventMap = {
+export type RuntimeCommandId = "line" | "hide" | (string & {});
+export type RuntimeCommandEventName = `command:${RuntimeCommandId}`;
+export type BaseRuntimeEventMap = {
     "runtime:ready": Record<string, never>;
     "character:click": Record<string, never>;
     "character:double_click": {
@@ -16,10 +18,8 @@ export type RuntimeEventMap = {
     "command:hover": {
         command: RuntimeCommandId;
     };
-    "command:line": Record<string, never>;
-    "command:fortune": Record<string, never>;
-    "command:hide": Record<string, never>;
 };
+export type RuntimeEventMap = BaseRuntimeEventMap & Record<RuntimeCommandEventName, Record<string, never>>;
 export type RuntimeEventName = keyof RuntimeEventMap;
 export type RuntimeEventHandler<TEventName extends RuntimeEventName> = (payload: RuntimeEventMap[TEventName]) => void;
 export type CharacterProfile = {
@@ -43,25 +43,73 @@ export type CharacterTouchArea = {
 };
 export type CharacterAssets = {
     expressions: Record<CharacterExpression, CharacterExpressionAsset>;
+    surfaces?: Record<string, CharacterSurface>;
     alt: string;
     hitAreas?: Partial<Record<CharacterTouchPart, CharacterTouchArea>>;
 };
 export type CharacterExpressionAsset = string | string[];
+export type CharacterLayerId = "base" | "eyes" | "mouth" | "ears" | "accessory" | (string & {});
+export type CharacterLayer = {
+    image?: string;
+    frames?: string[];
+    intervalMs?: number;
+    coversBase?: boolean;
+};
+export type CharacterSurface = {
+    id: string;
+    image?: string;
+    expression?: CharacterExpression;
+    alt?: string;
+    layers?: Partial<Record<CharacterLayerId, CharacterLayer>>;
+    mouthImages?: {
+        closed: string;
+        open: string;
+    };
+};
 export type CharacterTouchPart = string & {};
-export type InteractiveAreaId = "runtimeTitle" | "eventLog" | "commandMenu";
-export type RuntimeCommandId = "fortune" | "line" | "hide";
-export type DialogueCategory = "onMount" | "onClick" | "onTouchHead" | "onTouchFace" | "onTouchBody" | "onHoverRuntimeTitle" | "onHoverEventLog" | "onHoverCommandMenu" | "onHoverFortuneCommand" | "onHoverLineCommand" | "onHoverHideCommand" | "onRandomPrompt" | "onIdle" | "onLine" | "onHide" | "onShow";
-export type DialogueLineSet = Record<DialogueCategory, string[]>;
+export type InteractiveAreaId = "runtimeTitle" | "eventLog" | "commandMenu" | (string & {});
+export type BuiltinDialogueCategory = "onMount" | "onClick" | "onTouchHead" | "onTouchFace" | "onTouchBody" | "onHoverRuntimeTitle" | "onHoverEventLog" | "onHoverCommandMenu" | "onHoverFortuneCommand" | "onHoverLineCommand" | "onHoverHideCommand" | "onRandomPrompt" | "onIdle" | "onLine" | "onHide" | "onShow";
+export type DialogueCategory = BuiltinDialogueCategory | (string & {});
+export type DialogueLineSet = Partial<Record<DialogueCategory, string[]>>;
 export type DialogueMessage = {
     speaker: string;
     text: string;
+    script?: DialogueScript;
 };
-export type RuntimeAction = {
+export type DialogueScript = DialogueToken[];
+export type DialogueToken = {
+    type: "text";
+    value: string;
+} | {
+    type: "wait";
+    ms: number;
+} | {
+    type: "surface";
+    id: string;
+} | {
+    type: "clear";
+} | {
+    type: "newline";
+} | {
+    type: "choice";
+    choices: DialogueChoice[];
+} | {
+    type: "end";
+};
+export type DialogueChoice = {
+    label: string;
+    actions: RuntimeAction[];
+};
+export type BuiltinRuntimeAction = {
     type: "speak";
     category: DialogueCategory;
 } | {
     type: "speak_text";
     text: string;
+} | {
+    type: "speak_script";
+    text: string;
+    script: DialogueScript;
 } | {
     type: "change_expression";
     expression: CharacterExpression;
@@ -85,6 +133,11 @@ export type RuntimeAction = {
     type: "play_animation";
     animation: string;
     duration?: number;
+} | {
+    type: "play_layer_animation";
+    layerId: CharacterLayerId;
+    duration?: number;
+    active?: boolean;
 } | {
     type: "open_ui";
     target: string;
@@ -134,17 +187,41 @@ export type RuntimeAction = {
     type: "change_balloon";
     theme: string;
 } | {
+    type: "change_balloon_font_size";
+    size: string;
+} | {
     type: "open_management_menu";
+    menuId?: string;
     title?: string;
     items: ManagementMenuItem[];
 } | {
+    type: "set_management_menu_display";
+    display: ManagementMenuDisplay;
+    menuId?: string;
+} | {
+    type: "reset_runtime_ui";
+} | {
     type: "close_management_menu";
 };
+export type CustomRuntimeAction = {
+    type: string & {};
+    [key: string]: unknown;
+};
+export type RuntimeAction = BuiltinRuntimeAction | CustomRuntimeAction;
+export type RuntimeActionHandler<TAction extends RuntimeAction = RuntimeAction> = (action: TAction, context: {
+    runActions: (actions: RuntimeAction[]) => Promise<void>;
+}) => void | Promise<void>;
 export type ManagementMenuItem = {
     id: string;
     label: string;
+    description?: string;
     actions?: RuntimeAction[];
     children?: ManagementMenuItem[];
+};
+export type ManagementMenuDisplay = "balloon" | "panel" | (string & {});
+export type ManagementMenuOptions = {
+    defaultDisplay?: ManagementMenuDisplay;
+    displays?: Record<string, ManagementMenuDisplay>;
 };
 export type RuntimeRule = {
     id: string;
@@ -191,18 +268,24 @@ export type RuntimeSelectors = {
     stage: string;
     sprite: string;
     spriteImage: string;
+    speechBalloon?: string;
     speakerName: string;
     speechText: string;
     balloonActionMenu?: string;
-    eventLog: string;
+    panelActionMenu?: string;
     menuButtons: string;
-    hitboxEditor?: string;
-    hitboxEditorAdd?: string;
-    hitboxEditorClose?: string;
-    hitboxEditorBody?: string;
-    hitboxEditorCopy?: string;
     restoreBadge?: string;
     observeAreas: string;
+};
+export type HitboxEditorDevtoolSelectors = {
+    editor?: string;
+    addButton?: string;
+    closeButton?: string;
+    body?: string;
+    copyButton?: string;
+};
+export type RuntimeDiagnosticsDevtoolSelectors = {
+    eventLog?: string;
     statusMode?: string;
     statusExpression?: string;
     statusVisibility?: string;
@@ -210,6 +293,14 @@ export type RuntimeSelectors = {
     statusIdleCountdown?: string;
     statusRandomPrompt?: string;
     statusActionTimers?: string;
+};
+export type RuntimeDevtoolsOptions = {
+    hitboxEditor?: {
+        selectors: HitboxEditorDevtoolSelectors;
+    };
+    diagnostics?: {
+        selectors: RuntimeDiagnosticsDevtoolSelectors;
+    };
 };
 export type CharacterSpriteSizeOptions = {
     desktopWidth: string;
@@ -245,6 +336,8 @@ export type GhostRuntimeOptions = {
     character: CharacterDefinition;
     plugins?: RuntimePlugin[];
     selectors: RuntimeSelectors;
+    devtools?: RuntimeDevtoolsOptions;
+    managementMenu?: ManagementMenuOptions;
     timing?: Partial<RuntimeTimingOptions>;
     features?: Partial<RuntimeFeatureOptions>;
     typing?: Partial<SpeechTypingOptions>;
@@ -256,11 +349,13 @@ export type GhostRuntimeOptions = {
 };
 export type GhostRuntime = {
     emit: <TEventName extends RuntimeEventName>(eventName: TEventName, payload?: RuntimeEventMap[TEventName]) => void;
+    registerAction: (type: string, handler: RuntimeActionHandler) => void;
     destroy: () => void;
 };
 export type PluginResult = {
     title: string;
     message: string;
     expression?: CharacterExpression;
+    script?: DialogueScript;
 };
 //# sourceMappingURL=types.d.ts.map
