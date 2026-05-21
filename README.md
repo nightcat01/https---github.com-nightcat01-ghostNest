@@ -29,7 +29,7 @@ npm.cmd run dev
 
 ## 개발자 시작점
 
-기능을 붙이는 개발자는 먼저 [DEVELOPER_GUIDE.md](./DEVELOPER_GUIDE.md)를 확인합니다.
+기능을 붙이는 개발자는 먼저 [GUIDE.md](./GUIDE.md)를 확인합니다.
 
 일반적인 기능 추가나 서비스 연결에서 우선 확인할 파일은 다음 3개입니다.
 
@@ -43,6 +43,8 @@ npm.cmd run dev
 
 | 문서 | 역할 |
 | --- | --- |
+| [GUIDE.md](./GUIDE.md) | 처음 보는 개발자를 위한 통합 가이드 |
+| [DETAIL_GUIDE.md](./DETAIL_GUIDE.md) | 상세 문서와 데모별 문서 링크 지도 |
 | [PROJECT_COMPASS.md](./PROJECT_COMPASS.md) | 프로젝트 방향과 판단 기준 |
 | [DEVELOPER_GUIDE.md](./DEVELOPER_GUIDE.md) | 개발자가 먼저 보는 사용 가이드 |
 | [ACTION_CATALOG.md](./ACTION_CATALOG.md) | 지원 액션 목록과 예시 |
