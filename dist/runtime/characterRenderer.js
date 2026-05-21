@@ -50,6 +50,10 @@ function getSurfaceLayer(surface, layerId) {
 function getLayerFrame(layer, frameIndex) {
     return layer.frames?.[frameIndex] ?? layer.image ?? null;
 }
+/**
+ * Creates the DOM renderer for character expressions, surfaces, and layer animations.
+ * This module owns visual state only; actions and rules decide when the state changes.
+ */
 export function createCharacterRenderer({ elements, character }) {
     const spriteLayers = setupSpriteLayerElements(elements.sprite, elements.spriteImage);
     const activeLayerAnimations = new Map();

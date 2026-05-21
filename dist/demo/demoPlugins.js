@@ -3,6 +3,10 @@ import { createMinigamePlugin } from "../plugins/minigame/index.js";
 import { systemInfoPlugin } from "../plugins/systemInfo/index.js";
 import { timerPlugin } from "../plugins/timer/index.js";
 import { weatherPlugin } from "../plugins/weather/index.js";
+/**
+ * Creates the demo plugin set used by the default GhostNest sample.
+ * Replace this preset in src/ghost/nanika.config.ts when wiring real API, DB, or AI features.
+ */
 export function createDemoPlugins() {
     return [
         fortunePlugin,

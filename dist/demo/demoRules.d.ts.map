@@ -1,1 +1,1 @@
-{"version":3,"file":"demoRules.d.ts","sourceRoot":"","sources":["../../src/demo/demoRules.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,WAAW,EAAE,MAAM,kBAAkB,CAAC;AAGpD,wBAAgB,eAAe,IAAI,WAAW,EAAE,CAuC/C"}
+{"version":3,"file":"demoRules.d.ts","sourceRoot":"","sources":["../../src/demo/demoRules.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,kBAAkB,EAAE,WAAW,EAAE,MAAM,kBAAkB,CAAC;AAGxE;;;GAGG;AACH,wBAAgB,eAAe,CAAC,SAAS,GAAE,kBAAkB,EAAoC,GAAG,WAAW,EAAE,CAuChH"}

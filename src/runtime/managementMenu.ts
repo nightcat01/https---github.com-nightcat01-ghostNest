@@ -51,6 +51,10 @@ function makePanelMenuDraggable(menuElement: HTMLElement, handleElement: HTMLEle
   let initialY = 0;
 
   handleElement.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) {
+      return;
+    }
+
     isDragging = true;
     startX = event.clientX;
     startY = event.clientY;
@@ -61,14 +65,15 @@ function makePanelMenuDraggable(menuElement: HTMLElement, handleElement: HTMLEle
     initialX = menuRect.left - parentRect.left;
     initialY = menuRect.top - parentRect.top;
 
+    menuElement.style.width = `${menuRect.width}px`;
+    menuElement.style.height = `${menuRect.height}px`;
     menuElement.style.right = "auto";
     menuElement.style.bottom = "auto";
     menuElement.style.left = `${initialX}px`;
     menuElement.style.top = `${initialY}px`;
-    menuElement.style.height = `${menuElement.getBoundingClientRect().height}px`;
     menuElement.dataset.dragging = "true";
 
-    handleElement.setPointerCapture(event.pointerId);
+    handleElement.setPointerCapture?.(event.pointerId);
   });
 
   handleElement.addEventListener("pointermove", (event) => {
@@ -98,7 +103,7 @@ function makePanelMenuDraggable(menuElement: HTMLElement, handleElement: HTMLEle
     isDragging = false;
     delete menuElement.dataset.dragging;
     menuElement.style.removeProperty("height");
-    handleElement.releasePointerCapture(event.pointerId);
+    handleElement.releasePointerCapture?.(event.pointerId);
   };
 
   handleElement.addEventListener("pointerup", stopDragging);
@@ -119,6 +124,10 @@ function renderMenuContent({
   display: ManagementMenuDisplay;
   menuElement: HTMLElement;
 }) {
+  const contentElement = display === "panel"
+    ? document.createElement("div")
+    : menuElement;
+
   if (menuTitle) {
     const titleElement = document.createElement("strong");
     titleElement.className = "management-menu-title";
@@ -127,6 +136,11 @@ function renderMenuContent({
       makePanelMenuDraggable(menuElement, titleElement);
     }
     menuElement.append(titleElement);
+  }
+
+  if (display === "panel") {
+    contentElement.className = "management-menu-body";
+    menuElement.append(contentElement);
   }
 
   if (parentItems) {
@@ -145,7 +159,7 @@ function renderMenuContent({
         display,
       });
     });
-    menuElement.append(backButton);
+    contentElement.append(backButton);
   }
 
   currentItems.forEach((item) => {
@@ -177,10 +191,14 @@ function renderMenuContent({
 
       void runActions([...(item.actions ?? []), { type: "close_management_menu" }]);
     });
-    menuElement.append(button);
+    contentElement.append(button);
   });
 }
 
+/**
+ * Renders a management menu into the selected UI target.
+ * The runtime owns action execution, while this renderer owns DOM shape and menu navigation.
+ */
 export function renderManagementMenu({
   action,
   targets,
@@ -214,11 +232,17 @@ export function renderManagementMenu({
   menuElement.hidden = false;
 }
 
+/**
+ * Clears all management menu targets.
+ */
 export function closeManagementMenu(targets: ManagementMenuTargets) {
   closeMenuElement(targets.balloon);
   closeMenuElement(targets.panel);
 }
 
+/**
+ * Resolves whether a menu should open in the balloon, panel, or a custom display slot.
+ */
 export function resolveManagementMenuDisplay(
   action: OpenManagementMenuAction,
   options: ManagementMenuOptions | undefined,

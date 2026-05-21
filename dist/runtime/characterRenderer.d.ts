@@ -4,6 +4,10 @@ type CharacterRendererOptions = {
     elements: RuntimeElements;
     character: CharacterDefinition;
 };
+/**
+ * Creates the DOM renderer for character expressions, surfaces, and layer animations.
+ * This module owns visual state only; actions and rules decide when the state changes.
+ */
 export declare function createCharacterRenderer({ elements, character }: CharacterRendererOptions): {
     applySurface: (surfaceId: string) => void;
     destroy: () => void;

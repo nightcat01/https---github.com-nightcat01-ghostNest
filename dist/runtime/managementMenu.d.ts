@@ -17,8 +17,18 @@ type RenderManagementMenuOptions = {
     menuTitle?: string | undefined;
     display: ManagementMenuDisplay;
 };
+/**
+ * Renders a management menu into the selected UI target.
+ * The runtime owns action execution, while this renderer owns DOM shape and menu navigation.
+ */
 export declare function renderManagementMenu({ action, targets, runActions, previewItem, currentItems, parentItems, menuTitle, display, }: RenderManagementMenuOptions): void;
+/**
+ * Clears all management menu targets.
+ */
 export declare function closeManagementMenu(targets: ManagementMenuTargets): void;
+/**
+ * Resolves whether a menu should open in the balloon, panel, or a custom display slot.
+ */
 export declare function resolveManagementMenuDisplay(action: OpenManagementMenuAction, options: ManagementMenuOptions | undefined): ManagementMenuDisplay;
 export {};
 //# sourceMappingURL=managementMenu.d.ts.map

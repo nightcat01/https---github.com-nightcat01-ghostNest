@@ -1,7 +1,14 @@
+/**
+ * Creates one rock-paper-scissors plugin variant for the selected player choice.
+ */
 export function createMinigamePlugin(choice, onResult) {
     return {
         id: `minigame_${choice}`,
         name: `가위바위보: ${choice}`,
+        description: "선택한 패를 기준으로 간단한 가위바위보 결과를 반환합니다.",
+        /**
+         * Runs the minigame and converts the result into character speech.
+         */
         execute: () => {
             const ghostChoices = ["가위", "바위", "보"];
             const ghostChoice = ghostChoices[Math.floor(Math.random() * ghostChoices.length)];

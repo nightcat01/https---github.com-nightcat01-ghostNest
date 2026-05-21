@@ -2,6 +2,8 @@
 
 웹 기반 AI 캐릭터 런타임을 실험하기 위한 TypeScript MVP입니다.
 
+GhostNest는 API, DB, AI, UI 같은 외부 기능을 액션에 매핑하고, 그 결과를 캐릭터 대사, 표정, 메뉴, 애니메이션으로 표현하는 나니카형 웹 런타임을 목표로 합니다.
+
 ## 현재 범위
 
 - 캐릭터 표시
@@ -10,7 +12,7 @@
 - 화면 관찰 영역 hover/focus 반응
 - idle 이벤트와 랜덤 발화
 - 캐릭터 프로필과 대사 데이터 분리
-- 더미 운세 플러그인 호출
+- 데모 플러그인 호출
 - 외부에서 호출 가능한 `createGhostRuntime()` API
 
 ## 실행
@@ -25,119 +27,64 @@ npm.cmd run dev
 
 브라우저에서 `http://127.0.0.1:4173`을 열면 됩니다.
 
-## 사용 예시
+## 개발자 시작점
 
-```ts
-import { rine } from "./characters/rine/index.js";
-import { fortunePlugin } from "./plugins/fortune/index.js";
-import { createGhostRuntime } from "./runtime/createGhostRuntime.js";
+기능을 붙이는 개발자는 먼저 [DEVELOPER_GUIDE.md](./DEVELOPER_GUIDE.md)를 확인합니다.
 
-createGhostRuntime({
-  character: rine,
-  plugins: [fortunePlugin],
-  selectors: {
-    stage: "#characterStage",
-    sprite: "#characterSprite",
-    spriteImage: "#characterSpriteImage",
-    speakerName: "#speakerName",
-    speechText: "#speechText",
-    balloonActionMenu: "#balloonActionMenu",
-    eventLog: "#eventLog",
-    menuButtons: "[data-command]",
-    observeAreas: "[data-observe-area]",
-    statusMode: "#statusMode",
-    statusExpression: "#statusExpression",
-    statusVisibility: "#statusVisibility",
-    statusLastEvent: "#statusLastEvent",
-    statusIdleCountdown: "#statusIdleCountdown",
-    statusRandomPrompt: "#statusRandomPrompt",
-    statusActionTimers: "#statusActionTimers",
-  },
-  features: {
-    commandHoverDescription: true,
-  },
-  typing: {
-    enabled: true,
-    interval: 26,
-  },
-  spriteSize: {
-    desktopWidth: "260px",
-    desktopHeight: "390px",
-    mobileWidth: "170px",
-    mobileHeight: "255px",
-  },
-});
-```
+일반적인 기능 추가나 서비스 연결에서 우선 확인할 파일은 다음 3개입니다.
+
+- `src/ghost/character.ts`: 사용할 캐릭터 데이터 선택
+- `src/ghost/nanika.config.ts`: 외부 연결점, selector, 런타임 옵션 설정
+- `src/ghost/actions.ts`: 메뉴 항목과 이벤트 rule의 액션 매핑
+
+`src/core`, `src/runtime`, `dist`는 일반적인 기능 매핑 과정에서 직접 수정하지 않는 것을 목표로 합니다.
+
+## 주요 문서
+
+| 문서 | 역할 |
+| --- | --- |
+| [PROJECT_COMPASS.md](./PROJECT_COMPASS.md) | 프로젝트 방향과 판단 기준 |
+| [DEVELOPER_GUIDE.md](./DEVELOPER_GUIDE.md) | 개발자가 먼저 보는 사용 가이드 |
+| [ACTION_CATALOG.md](./ACTION_CATALOG.md) | 지원 액션 목록과 예시 |
+| [ACTION_LIFECYCLE.md](./ACTION_LIFECYCLE.md) | 액션의 시작, 종료, 후속 액션 기준 |
+| [EXTERNAL_RESULT_MAPPING.md](./EXTERNAL_RESULT_MAPPING.md) | AI/API/DB 결과를 액션으로 연결하는 예시 |
+| [STORAGE_AND_SETTINGS.md](./STORAGE_AND_SETTINGS.md) | 저장값, 사용자 설정, StorageAdapter 경계 |
+| [UI_RENDERER_BOUNDARY.md](./UI_RENDERER_BOUNDARY.md) | UI renderer 교체 경계 |
+| [DIALOGUE_SCRIPT_GUIDE.md](./DIALOGUE_SCRIPT_GUIDE.md) | JSON 대사 연출 포맷 |
+| [src/characters/README.md](./src/characters/README.md) | 캐릭터 모듈 구조 |
+| [src/demo/README.md](./src/demo/README.md) | 데모 preset 구조 |
+| [src/plugins/README.md](./src/plugins/README.md) | 샘플 플러그인 구조 |
+| [src/examples/httpStorageAdapter.example.ts](./src/examples/httpStorageAdapter.example.ts) | HTTP 저장소 adapter 예시 |
 
 ## 구조
 
 ```txt
 src/
   app.ts
-  runtime/
-    createGhostRuntime.ts
+  ghost/
+    character.ts
+    nanika.config.ts
+    actions.ts
   characters/
-    rine/
-      index.ts
-      profile.ts
-      lines.ts
-    mira/
-      index.ts
-      profile.ts
-      lines.ts
-  core/
-    dialogueEngine.ts
-    eventBus.ts
-    hitTest.ts
-    runtimeState.ts
-    types.ts
+  demo/
   plugins/
-    fortune/
-      index.ts
+  core/
+  runtime/
+  devtools/
+```
+
+큰 경계는 다음과 같습니다.
+
+```txt
+src/ghost       실제 조립 지점
+src/demo        샘플 preset
+src/plugins     샘플 외부 기능 구현
+src/characters  캐릭터 데이터/표현 리소스
+src/core        타입/이벤트/상태/공통 계약
+src/runtime     실제 실행기/렌더링/액션 처리
 ```
 
 `app.ts`는 데모 진입점이고, 실제 런타임 조립은 `createGhostRuntime()`이 담당합니다.
-
-캐릭터 이미지는 표정별 단일 이미지 또는 이미지 배열로 등록할 수 있습니다. 배열이면 해당 표정이 표시될 때 후보 중 하나를 랜덤으로 선택합니다.
-
-대사는 기본적으로 한 글자씩 타이핑됩니다. `typing.enabled`를 `false`로 두면 즉시 출력으로 되돌릴 수 있고, `typing.interval`로 글자 출력 간격을 조절합니다.
-
-## 지원 액션
-
-현재 `RuntimeAction`은 다음 범용 액션을 지원합니다.
-
-```txt
-speak
-speak_text
-speak_script
-change_expression
-set_touched_part
-toggle_hidden
-call_plugin
-log
-touch_interaction
-mark_prompted
-play_animation
-play_layer_animation
-open_ui
-close_ui
-navigate
-set_state
-emit_event
-play_sound
-save_data
-load_data
-show_notification
-start_timer
-stop_timer
-move_character
-change_balloon
-change_balloon_font_size
-open_management_menu
-set_management_menu_display
-reset_runtime_ui
-close_management_menu
-```
 
 ## Rule 예시
 
@@ -159,316 +106,6 @@ rules: [
 ]
 ```
 
-기본 동작으로 캐릭터를 더블클릭하면 말풍선 안에 관리 메뉴가 열립니다. 이 메뉴는 `character:double_click` rule과 `open_management_menu` 액션으로 구성되어 있습니다.
+지원 액션과 상세 예시는 [ACTION_CATALOG.md](./ACTION_CATALOG.md)를 기준으로 정리합니다.
 
-관리 메뉴 항목은 `children`을 가질 수 있어 depth 메뉴를 만들 수 있습니다. 현재 기본 메뉴의 `말풍선 테마`는 하위 메뉴에서 `기본`, `soft`, `dark magic`을 선택합니다.
-
-`description`을 넣으면 메뉴 항목에 마우스를 올리거나 포커스했을 때 캐릭터가 해당 기능을 짧게 설명할 수 있습니다.
-
-## 액션별 현재 구현 예시
-
-아래 예시는 현재 소스 기준으로 바로 `rules[].actions`에 넣을 수 있는 형태입니다.
-
-### speak
-
-캐릭터 대사 카테고리에서 랜덤 대사를 출력합니다.
-
-```ts
-{ type: "speak", category: "onTouchHead" }
-```
-
-현재 기본 rule에서는 머리/얼굴/몸 터치, hover 설명, idle, 랜덤 발화에 사용합니다.
-
-### speak_text
-
-고정 문장을 그대로 말풍선에 출력합니다.
-
-```ts
-{ type: "speak_text", text: "여기는 직접 지정한 안내 문장이에요." }
-```
-
-DB나 AI 응답 텍스트를 나중에 붙일 때 가장 단순한 출력 액션으로 쓸 수 있습니다.
-
-### change_expression
-
-캐릭터 표정을 변경하고, 등록된 이미지 후보 중 하나를 표시합니다.
-
-```ts
-{ type: "change_expression", expression: "thinking", clearTouchedPart: true }
-```
-
-리네는 `happy`, `thinking`, `surprised`에 여러 이미지 후보가 등록되어 있어 같은 표정도 랜덤하게 바뀔 수 있습니다.
-
-### set_touched_part
-
-마지막으로 반응한 캐릭터 부위를 기록합니다.
-
-```ts
-{ type: "set_touched_part", part: "head" }
-```
-
-현재는 CSS의 `data-touched-part` 변화에 사용합니다.
-
-### toggle_hidden
-
-캐릭터 스테이지의 숨김 상태를 토글합니다.
-
-```ts
-{ type: "toggle_hidden" }
-```
-
-현재 `command:hide`는 상태별 대사가 필요해서 직접 분기로 남아 있지만, 액션 자체는 실행기에서 지원합니다.
-
-### call_plugin
-
-등록된 플러그인을 `pluginId`로 찾아 실행합니다.
-
-```ts
-{ type: "call_plugin", pluginId: "fortune" }
-```
-
-현재 `fortunePlugin`은 `plugins: [fortunePlugin]`로 등록되며, 결과의 `title`, `message`, `expression`을 말풍선과 표정에 반영합니다.
-
-### log
-
-이벤트 로그에 문자열을 추가합니다.
-
-```ts
-{ type: "log", label: "custom.head.touch" }
-```
-
-디버깅과 rule 실행 확인용으로 사용합니다.
-
-### touch_interaction
-
-마지막 사용자 상호작용 시간을 갱신합니다.
-
-```ts
-{ type: "touch_interaction" }
-```
-
-idle, 랜덤 발화 타이밍을 밀어내는 데 사용합니다.
-
-### mark_prompted
-
-마지막 랜덤 발화 시각을 갱신합니다.
-
-```ts
-{ type: "mark_prompted" }
-```
-
-현재 `character:randomPrompt` 기본 rule에서 사용합니다.
-
-### play_animation
-
-캐릭터 sprite에 `data-animation`을 설정합니다.
-
-```ts
-{ type: "play_animation", animation: "wave_hand", duration: 520 }
-```
-
-현재 CSS에는 `wave_hand`, `jump`, `nod` 예시 애니메이션이 있습니다.
-
-### open_ui
-
-`data-runtime-ui`가 일치하는 UI 요소를 엽니다.
-
-```ts
-{ type: "open_ui", target: "fortune_modal" }
-```
-
-HTML에 아래처럼 대상이 있어야 합니다.
-
-```html
-<section data-runtime-ui="fortune_modal" hidden>...</section>
-```
-
-### close_ui
-
-`data-runtime-ui`가 일치하는 UI 요소를 닫습니다.
-
-```ts
-{ type: "close_ui", target: "fortune_modal" }
-```
-
-### navigate
-
-지정한 경로로 이동합니다.
-
-```ts
-{ type: "navigate", route: "/tarot" }
-```
-
-현재 구현은 `window.location.assign(route)`를 사용합니다.
-
-### set_state
-
-캐릭터 런타임 상태를 변경합니다.
-
-```ts
-{ type: "set_state", state: "service_active" }
-```
-
-상태는 `state.mode`와 스테이지의 `data-state`에 반영됩니다.
-
-### emit_event
-
-다른 런타임 이벤트를 발생시킵니다.
-
-```ts
-{ type: "emit_event", event: "character:idle" }
-```
-
-이벤트를 조합하거나 후속 rule을 실행할 때 사용할 수 있습니다.
-
-### play_sound
-
-지정한 사운드 파일을 재생합니다.
-
-```ts
-{ type: "play_sound", sound: "./assets/sounds/magic_click.mp3", volume: 0.5 }
-```
-
-브라우저 정책상 사용자 제스처 없이 재생이 막힐 수 있습니다.
-
-### save_data
-
-캐릭터별 localStorage에 데이터를 저장합니다.
-
-```ts
-{ type: "save_data", key: "last_fortune_result", value: "great_luck" }
-```
-
-저장 키는 내부적으로 `ghostNest:{characterId}:{key}` 형식이 됩니다.
-
-### load_data
-
-캐릭터별 localStorage에서 데이터를 불러옵니다.
-
-```ts
-{ type: "load_data", key: "last_fortune_result", speak: true }
-```
-
-`speak: true`이면 불러온 값을 말풍선으로 출력합니다.
-
-### show_notification
-
-알림을 표시합니다.
-
-```ts
-{ type: "show_notification", title: "오늘의 운세", message: "새 결과가 도착했어요." }
-```
-
-브라우저 알림 권한이 있으면 Notification을 사용하고, 아니면 말풍선으로 출력합니다.
-
-### start_timer
-
-일정 시간 뒤 액션 배열을 실행하는 타이머를 시작합니다.
-
-```ts
-{
-  type: "start_timer",
-  timer: "delayed_hint",
-  duration: 3000,
-  actions: [
-    { type: "speak_text", text: "3초 뒤에 나온 안내예요." },
-    { type: "log", label: "timer.delayed_hint" },
-  ],
-}
-```
-
-같은 이름의 타이머가 이미 있으면 기존 타이머를 취소하고 새로 시작합니다.
-
-### stop_timer
-
-실행 대기 중인 타이머를 취소합니다.
-
-```ts
-{ type: "stop_timer", timer: "delayed_hint" }
-```
-
-### move_character
-
-캐릭터 스테이지 위치를 직접 지정합니다.
-
-```ts
-{ type: "move_character", x: 40, y: 120 }
-```
-
-현재는 스테이지에 CSS 변수와 `data-position-mode="custom"`을 적용합니다.
-
-### change_balloon
-
-말풍선 테마를 변경합니다.
-
-```ts
-{ type: "change_balloon", theme: "dark_magic" }
-```
-
-현재 CSS에는 `dark_magic`, `soft` 테마 예시가 있습니다.
-
-### change_balloon_font_size
-
-말풍선 글자 크기를 변경합니다.
-
-```ts
-{ type: "change_balloon_font_size", size: "large" }
-```
-
-현재 CSS에는 `small`, `large` 예시가 있고, `default`를 주면 기본 크기로 되돌립니다.
-
-### open_management_menu
-
-관리 메뉴를 엽니다. 메뉴 항목은 `children`으로 depth를 만들고, 실제 실행은 각 항목의 `actions` 배열에 위임합니다.
-
-```ts
-{
-  type: "open_management_menu",
-  menuId: "system-tools",
-  title: "시스템 도구",
-  items: [
-    {
-      id: "weather",
-      label: "날씨 확인",
-      description: "날씨 기능을 실행해요.",
-      actions: [{ type: "call_plugin", pluginId: "weather" }],
-    },
-  ],
-}
-```
-
-`menuId`가 있으면 메뉴별 표시 방식 설정에 사용할 수 있습니다.
-
-### set_management_menu_display
-
-관리 메뉴를 말풍선 안에서 열지, 별도 패널로 열지 설정합니다.
-
-```ts
-{ type: "set_management_menu_display", display: "panel" }
-```
-
-특정 메뉴에만 적용하려면 `menuId`를 함께 지정합니다.
-
-```ts
-{ type: "set_management_menu_display", menuId: "system-tools", display: "balloon" }
-```
-
-현재 구현에서는 캐릭터별 저장소에 저장되어 새로고침 후에도 유지됩니다.
-
-### reset_runtime_ui
-
-사용자가 바꾼 런타임 UI 설정을 기본값으로 되돌립니다.
-
-```ts
-{ type: "reset_runtime_ui" }
-```
-
-현재 초기화 대상은 메뉴 표시 방식, 말풍선 테마, 말풍선 글자 크기, 캐릭터 위치입니다.
-
-### close_management_menu
-
-열려 있는 관리 메뉴를 닫습니다.
-
-```ts
-{ type: "close_management_menu" }
-```
+액션이 어디서 시작하고 어디서 끝나는지, 외부 AI/DB/API 결과 뒤에 후속 액션을 어떻게 연결하는지는 [ACTION_LIFECYCLE.md](./ACTION_LIFECYCLE.md)를 함께 봅니다.

@@ -1,10 +1,14 @@
 import { rineLines } from "./lines.js";
 import { rineProfile } from "./profile.js";
+/**
+ * Full character sample with expression images, DialogueScript surfaces, layers, and hit areas.
+ */
 export const rine = {
     profile: rineProfile,
     lines: rineLines,
     assets: {
         alt: "여우족 안내자 리네",
+        // Simple expression fallback map used by change_expression.
         expressions: {
             neutral: "./src/characters/rine/rine_standing_defualt.png",
             happy: [
@@ -20,6 +24,7 @@ export const rine = {
                 "./src/characters/rine/rine_standing_shy.png",
             ],
         },
+        // Surface map used by DialogueScript and layer-based rendering.
         surfaces: {
             "0": {
                 id: "0",
@@ -36,6 +41,7 @@ export const rine = {
                             "./src/characters/rine/rine_standing_defualt_mouth_small.png",
                         ],
                         intervalMs: 140,
+                        // Current demo mouth frames are full-size overlays; future assets can use transparent part layers.
                         coversBase: true,
                     },
                 },
@@ -51,6 +57,7 @@ export const rine = {
                 alt: "윙크하는 리네",
             },
         },
+        // Normalized collision areas for character touch interactions.
         hitAreas: {
             head: { minX: 0.2, maxX: 0.8, minY: 0.0, maxY: 0.35 },
             face: { minX: 0.22, maxX: 0.78, minY: 0.35, maxY: 0.58 },

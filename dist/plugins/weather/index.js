@@ -1,6 +1,10 @@
 export const weatherPlugin = {
     id: "weather",
     name: "현재 날씨 확인",
+    description: "공개 날씨 API를 호출해 외부 API 플러그인 연결 방식을 보여줍니다.",
+    /**
+     * Calls a public weather API and converts the response into a PluginResult.
+     */
     execute: async () => {
         try {
             // 서울 기준 좌표 (테스트용)

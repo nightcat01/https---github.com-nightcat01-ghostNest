@@ -3,6 +3,10 @@ import type { RuntimePlugin } from "../../core/types.js";
 export const systemInfoPlugin: RuntimePlugin = {
   id: "system_info",
   name: "시간 및 배터리 알리미",
+  description: "브라우저에서 접근 가능한 시간과 배터리 정보를 반환합니다.",
+  /**
+   * Reads browser-supported system information and formats it as a PluginResult.
+   */
   execute: async () => {
     const now = new Date();
     const timeString = new Intl.DateTimeFormat("ko-KR", {

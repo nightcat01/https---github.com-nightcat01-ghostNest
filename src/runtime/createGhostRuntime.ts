@@ -303,6 +303,7 @@ export function createGhostRuntime(options: GhostRuntimeOptions): GhostRuntime {
       elements,
       character: options.character,
       selectors: options.devtools.hitboxEditor.selectors,
+      storageAdapter,
     });
     cleanupCallbacks.push(hitboxEditor.destroy);
   }

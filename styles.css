@@ -305,15 +305,13 @@ h1 {
   left: 24px;
   width: min(360px, calc(100% - 48px));
   max-height: min(520px, var(--management-panel-max-height, calc(100% - 48px)));
-  padding: 14px;
-  border: 1px solid rgba(38, 35, 31, 0.14);
+  border: 1px solid rgba(38, 35, 31, 0.2);
   border-radius: 8px;
-  background: rgba(255, 250, 242, 0.96);
-  box-shadow: 0 18px 46px rgba(43, 34, 24, 0.2);
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  overflow-y: auto;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.15);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   overscroll-behavior: contain;
   z-index: 8;
 }
@@ -322,21 +320,30 @@ h1 {
   gap: 8px;
 }
 
-.management-panel-menu::-webkit-scrollbar {
+.management-panel-menu .management-menu-body {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 14px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.management-panel-menu .management-menu-body::-webkit-scrollbar {
   width: 6px;
 }
 
-.management-panel-menu::-webkit-scrollbar-track {
+.management-panel-menu .management-menu-body::-webkit-scrollbar-track {
   background: transparent;
   margin: 12px 0;
 }
 
-.management-panel-menu::-webkit-scrollbar-thumb {
+.management-panel-menu .management-menu-body::-webkit-scrollbar-thumb {
   background-color: rgba(38, 35, 31, 0.18);
   border-radius: 4px;
 }
 
-.management-panel-menu::-webkit-scrollbar-thumb:hover {
+.management-panel-menu .management-menu-body::-webkit-scrollbar-thumb:hover {
   background-color: rgba(38, 35, 31, 0.32);
 }
 
@@ -345,7 +352,6 @@ h1 {
 }
 
 .management-panel-menu strong {
-  grid-column: 1 / -1;
   color: var(--accent-strong);
   font-size: 0.9rem;
 }
@@ -359,11 +365,43 @@ h1 {
 }
 
 .management-panel-menu .management-menu-title {
+  min-height: 44px;
+  padding: 12px 42px 12px 16px;
+  border-bottom: 1px solid rgba(38, 35, 31, 0.1);
+  background: rgba(63, 127, 122, 0.08);
   cursor: grab;
+  display: flex;
+  align-items: center;
+  position: relative;
+  touch-action: none;
   user-select: none;
 }
 
+.management-panel-menu .management-menu-title::after {
+  content: "";
+  width: 18px;
+  height: 12px;
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  transform: translateY(-50%);
+  opacity: 0.42;
+  background-image:
+    radial-gradient(circle, currentColor 1.5px, transparent 1.8px),
+    radial-gradient(circle, currentColor 1.5px, transparent 1.8px);
+  background-position:
+    0 0,
+    6px 0;
+  background-size: 12px 6px;
+}
+
+.management-panel-menu .management-menu-title:hover,
+.management-panel-menu .management-menu-title:focus-visible {
+  background: rgba(63, 127, 122, 0.13);
+}
+
 .management-panel-menu[data-dragging="true"] .management-menu-title {
+  background: rgba(63, 127, 122, 0.18);
   cursor: grabbing;
 }
 
@@ -535,6 +573,14 @@ h1 {
   padding: 12px 16px;
   background: rgba(63, 127, 122, 0.08);
   border-bottom: 1px solid rgba(38, 35, 31, 0.1);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.hitbox-editor[data-dragging="true"] .hitbox-editor-header {
+  background: rgba(63, 127, 122, 0.18);
+  cursor: grabbing;
 }
 
 .hitbox-editor-header h3 {
@@ -748,17 +794,71 @@ h1 {
     grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
   }
 
+  .balloon-action-menu button {
+    min-height: 42px;
+    padding: 9px 10px;
+  }
+
   .management-panel-menu {
     top: 12px;
     left: 12px;
     right: 12px;
     width: auto;
     max-height: min(420px, var(--management-panel-max-height, calc(100% - 24px)));
+  }
+
+  .management-panel-menu .management-menu-body {
     grid-template-columns: 1fr;
+  }
+
+  .management-panel-menu .management-menu-title {
+    min-height: 46px;
+    padding: 12px 42px 12px 16px;
   }
 
   .character-sprite {
     width: var(--character-sprite-mobile-width, 154px);
     height: var(--character-sprite-mobile-height, 232px);
+  }
+
+  .restore-badge {
+    right: 16px;
+    bottom: 16px;
+    width: 52px;
+    height: 52px;
+  }
+
+  .hitbox-editor {
+    top: 12px;
+    right: 12px;
+    left: 12px;
+    width: auto;
+    max-height: calc(100vh - 24px);
+  }
+
+  .hitbox-editor-header {
+    min-height: 46px;
+    padding: 10px 12px;
+    gap: 10px;
+  }
+
+  .hitbox-editor-header h3 {
+    min-width: 0;
+    font-size: 0.9rem;
+  }
+
+  .hitbox-editor-header button {
+    min-height: 36px;
+    padding: 6px 8px;
+  }
+
+  .hitbox-editor-body {
+    max-height: min(420px, calc(100vh - 168px));
+    padding: 12px;
+  }
+
+  .hitbox-slider-row {
+    grid-template-columns: 38px minmax(0, 1fr) 38px;
+    gap: 6px;
   }
 }

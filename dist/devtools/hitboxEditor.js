@@ -10,9 +10,7 @@ function optionalElement(selector) {
     }
     return document.querySelector(selector);
 }
-function getStorageKey(character) {
-    return `ghostNest:${character.profile.id}:hitAreas`;
-}
+const hitAreasStorageKey = "hitAreas";
 function isHitArea(value) {
     if (!value || typeof value !== "object") {
         return false;
@@ -38,26 +36,22 @@ function normalizeHitAreas(value) {
     });
     return Object.keys(hitAreas).length > 0 ? hitAreas : null;
 }
-function loadStoredHitAreas(character) {
+async function loadStoredHitAreas(storageAdapter) {
     try {
-        const rawValue = window.localStorage.getItem(getStorageKey(character));
-        if (!rawValue) {
-            return null;
-        }
-        return normalizeHitAreas(JSON.parse(rawValue));
+        return normalizeHitAreas(await storageAdapter.get(hitAreasStorageKey));
     }
     catch {
         return null;
     }
 }
-function saveStoredHitAreas(character, hitAreas) {
+async function saveStoredHitAreas(storageAdapter, hitAreas) {
     const serializableHitAreas = {};
     Object.entries(hitAreas).forEach(([part, area]) => {
         if (area) {
             serializableHitAreas[part] = area;
         }
     });
-    window.localStorage.setItem(getStorageKey(character), JSON.stringify({ hitAreas: serializableHitAreas }));
+    await storageAdapter.set(hitAreasStorageKey, { hitAreas: serializableHitAreas });
 }
 function getPartColor(part, alpha = 0.4) {
     if (part === "head")
@@ -95,19 +89,23 @@ function ensureHitAreas(character) {
     if (!character.assets) {
         character.assets = { expressions: { neutral: "", happy: "", thinking: "", surprised: "" }, alt: "" };
     }
-    const storedHitAreas = loadStoredHitAreas(character);
-    if (storedHitAreas) {
-        character.assets.hitAreas = {
-            ...character.assets.hitAreas,
-            ...storedHitAreas,
-        };
-    }
     if (!character.assets.hitAreas) {
         character.assets.hitAreas = {};
     }
     return character.assets.hitAreas;
 }
-export function initHitboxEditor({ elements, character, selectors }) {
+async function applyStoredHitAreas(character, storageAdapter) {
+    const storedHitAreas = await loadStoredHitAreas(storageAdapter);
+    if (!storedHitAreas) {
+        return;
+    }
+    character.assets.hitAreas = {
+        ...character.assets.hitAreas,
+        ...storedHitAreas,
+    };
+}
+export function initHitboxEditor({ elements, character, selectors, storageAdapter }) {
+    const hitAreas = ensureHitAreas(character);
     const cleanupCallbacks = [];
     const editorElements = {
         editor: optionalElement(selectors.editor),
@@ -155,6 +153,10 @@ export function initHitboxEditor({ elements, character, selectors }) {
             elements.sprite.appendChild(debugArea);
         });
     };
+    void applyStoredHitAreas(character, storageAdapter).then(() => {
+        renderEditorParts();
+        renderDebugHitAreas();
+    });
     if (!editorElements.editor || !editorElements.body) {
         renderDebugHitAreas();
         return {
@@ -174,6 +176,9 @@ export function initHitboxEditor({ elements, character, selectors }) {
         let initialX = 0;
         let initialY = 0;
         const handlePointerDown = (e) => {
+            if (e.button !== 0) {
+                return;
+            }
             if (e.target.tagName.toLowerCase() === "button") {
                 return;
             }
@@ -183,13 +188,16 @@ export function initHitboxEditor({ elements, character, selectors }) {
             const rect = editor.getBoundingClientRect();
             initialX = rect.left;
             initialY = rect.top;
+            editor.style.width = `${rect.width}px`;
+            editor.style.height = `${rect.height}px`;
             editor.style.right = "auto";
             editor.style.bottom = "auto";
             editor.style.left = `${initialX}px`;
             editor.style.top = `${initialY}px`;
             editor.style.margin = "0"; // prevent margin offset issues
+            editor.dataset.dragging = "true";
             header.style.cursor = "grabbing";
-            header.setPointerCapture(e.pointerId);
+            header.setPointerCapture?.(e.pointerId);
         };
         const handlePointerMove = (e) => {
             if (!isDragging)
@@ -204,15 +212,19 @@ export function initHitboxEditor({ elements, character, selectors }) {
             if (!isDragging)
                 return;
             isDragging = false;
+            delete editor.dataset.dragging;
             header.style.cursor = "grab";
-            header.releasePointerCapture(e.pointerId);
+            editor.style.removeProperty("height");
+            header.releasePointerCapture?.(e.pointerId);
         };
         const handlePointerCancel = (e) => {
             if (!isDragging)
                 return;
             isDragging = false;
+            delete editor.dataset.dragging;
             header.style.cursor = "grab";
-            header.releasePointerCapture(e.pointerId);
+            editor.style.removeProperty("height");
+            header.releasePointerCapture?.(e.pointerId);
         };
         header.addEventListener("pointerdown", handlePointerDown);
         header.addEventListener("pointermove", handlePointerMove);
@@ -225,7 +237,6 @@ export function initHitboxEditor({ elements, character, selectors }) {
             header.removeEventListener("pointercancel", handlePointerCancel);
         });
     }
-    const hitAreas = ensureHitAreas(character);
     const renderEditorParts = () => {
         editorElements.body?.replaceChildren();
         const currentParts = Object.keys(hitAreas);
@@ -252,7 +263,7 @@ export function initHitboxEditor({ elements, character, selectors }) {
                 deleteButton.textContent = "삭제";
                 deleteButton.addEventListener("click", () => {
                     delete hitAreas[part];
-                    saveStoredHitAreas(character, hitAreas);
+                    void saveStoredHitAreas(storageAdapter, hitAreas);
                     renderEditorParts();
                     renderDebugHitAreas();
                 });
@@ -285,7 +296,7 @@ export function initHitboxEditor({ elements, character, selectors }) {
                         };
                     }
                     hitAreas[part][axis] = value;
-                    saveStoredHitAreas(character, hitAreas);
+                    void saveStoredHitAreas(storageAdapter, hitAreas);
                     renderDebugHitAreas();
                 });
                 row.append(label, input, valueLabel);
@@ -308,7 +319,7 @@ export function initHitboxEditor({ elements, character, selectors }) {
             return;
         }
         hitAreas[cleanId] = { minX: 0.4, maxX: 0.6, minY: 0.4, maxY: 0.6 };
-        saveStoredHitAreas(character, hitAreas);
+        void saveStoredHitAreas(storageAdapter, hitAreas);
         renderEditorParts();
         renderDebugHitAreas();
     };
@@ -320,7 +331,7 @@ export function initHitboxEditor({ elements, character, selectors }) {
     };
     const handleCopyClick = () => {
         const data = JSON.stringify({ hitAreas }, null, 2);
-        saveStoredHitAreas(character, hitAreas);
+        void saveStoredHitAreas(storageAdapter, hitAreas);
         navigator.clipboard.writeText(data).then(() => {
             alert(`히트박스 설정이 클립보드에 복사되었습니다!\n\n${data}`);
         });

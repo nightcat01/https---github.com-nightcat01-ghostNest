@@ -1,4 +1,9 @@
-import type { CharacterDefinition, CharacterTouchArea, HitboxEditorDevtoolSelectors } from "../core/types.js";
+import type {
+  CharacterDefinition,
+  CharacterTouchArea,
+  HitboxEditorDevtoolSelectors,
+  StorageAdapter,
+} from "../core/types.js";
 import type { RuntimeElements } from "../runtime/domElements.js";
 
 const defaultHitAreas: Record<string, CharacterTouchArea> = {
@@ -13,6 +18,7 @@ type InitHitboxEditorOptions = {
   elements: RuntimeElements;
   character: CharacterDefinition;
   selectors: HitboxEditorDevtoolSelectors;
+  storageAdapter: StorageAdapter;
 };
 
 function optionalElement<TElement extends Element>(selector: string | undefined): TElement | null {
@@ -23,9 +29,7 @@ function optionalElement<TElement extends Element>(selector: string | undefined)
   return document.querySelector<TElement>(selector);
 }
 
-function getStorageKey(character: CharacterDefinition) {
-  return `ghostNest:${character.profile.id}:hitAreas`;
-}
+const hitAreasStorageKey = "hitAreas";
 
 function isHitArea(value: unknown): value is CharacterTouchArea {
   if (!value || typeof value !== "object") {
@@ -61,21 +65,18 @@ function normalizeHitAreas(value: unknown) {
   return Object.keys(hitAreas).length > 0 ? hitAreas : null;
 }
 
-function loadStoredHitAreas(character: CharacterDefinition) {
+async function loadStoredHitAreas(storageAdapter: StorageAdapter) {
   try {
-    const rawValue = window.localStorage.getItem(getStorageKey(character));
-
-    if (!rawValue) {
-      return null;
-    }
-
-    return normalizeHitAreas(JSON.parse(rawValue));
+    return normalizeHitAreas(await storageAdapter.get(hitAreasStorageKey));
   } catch {
     return null;
   }
 }
 
-function saveStoredHitAreas(character: CharacterDefinition, hitAreas: Partial<Record<string, CharacterTouchArea>>) {
+async function saveStoredHitAreas(
+  storageAdapter: StorageAdapter,
+  hitAreas: Partial<Record<string, CharacterTouchArea>>,
+) {
   const serializableHitAreas: Record<string, CharacterTouchArea> = {};
 
   Object.entries(hitAreas).forEach(([part, area]) => {
@@ -84,7 +85,7 @@ function saveStoredHitAreas(character: CharacterDefinition, hitAreas: Partial<Re
     }
   });
 
-  window.localStorage.setItem(getStorageKey(character), JSON.stringify({ hitAreas: serializableHitAreas }));
+  await storageAdapter.set(hitAreasStorageKey, { hitAreas: serializableHitAreas });
 }
 
 function getPartColor(part: string, alpha = 0.4) {
@@ -126,15 +127,6 @@ function ensureHitAreas(character: CharacterDefinition) {
     character.assets = { expressions: { neutral: "", happy: "", thinking: "", surprised: "" }, alt: "" };
   }
 
-  const storedHitAreas = loadStoredHitAreas(character);
-
-  if (storedHitAreas) {
-    character.assets.hitAreas = {
-      ...character.assets.hitAreas,
-      ...storedHitAreas,
-    };
-  }
-
   if (!character.assets.hitAreas) {
     character.assets.hitAreas = {};
   }
@@ -142,7 +134,21 @@ function ensureHitAreas(character: CharacterDefinition) {
   return character.assets.hitAreas;
 }
 
-export function initHitboxEditor({ elements, character, selectors }: InitHitboxEditorOptions) {
+async function applyStoredHitAreas(character: CharacterDefinition, storageAdapter: StorageAdapter) {
+  const storedHitAreas = await loadStoredHitAreas(storageAdapter);
+
+  if (!storedHitAreas) {
+    return;
+  }
+
+  character.assets!.hitAreas = {
+    ...character.assets!.hitAreas,
+    ...storedHitAreas,
+  };
+}
+
+export function initHitboxEditor({ elements, character, selectors, storageAdapter }: InitHitboxEditorOptions) {
+  const hitAreas = ensureHitAreas(character);
   const cleanupCallbacks: Array<() => void> = [];
   const editorElements = {
     editor: optionalElement<HTMLElement>(selectors.editor),
@@ -198,6 +204,11 @@ export function initHitboxEditor({ elements, character, selectors }: InitHitboxE
     });
   };
 
+  void applyStoredHitAreas(character, storageAdapter).then(() => {
+    renderEditorParts();
+    renderDebugHitAreas();
+  });
+
   if (!editorElements.editor || !editorElements.body) {
     renderDebugHitAreas();
     return {
@@ -221,6 +232,10 @@ export function initHitboxEditor({ elements, character, selectors }: InitHitboxE
     let initialY = 0;
 
     const handlePointerDown = (e: PointerEvent) => {
+      if (e.button !== 0) {
+        return;
+      }
+
       if ((e.target as HTMLElement).tagName.toLowerCase() === "button") {
         return;
       }
@@ -233,14 +248,17 @@ export function initHitboxEditor({ elements, character, selectors }: InitHitboxE
       initialX = rect.left;
       initialY = rect.top;
 
+      editor.style.width = `${rect.width}px`;
+      editor.style.height = `${rect.height}px`;
       editor.style.right = "auto";
       editor.style.bottom = "auto";
       editor.style.left = `${initialX}px`;
       editor.style.top = `${initialY}px`;
       editor.style.margin = "0"; // prevent margin offset issues
 
+      editor.dataset.dragging = "true";
       header.style.cursor = "grabbing";
-      header.setPointerCapture(e.pointerId);
+      header.setPointerCapture?.(e.pointerId);
     };
 
     const handlePointerMove = (e: PointerEvent) => {
@@ -257,15 +275,19 @@ export function initHitboxEditor({ elements, character, selectors }: InitHitboxE
     const handlePointerUp = (e: PointerEvent) => {
       if (!isDragging) return;
       isDragging = false;
+      delete editor.dataset.dragging;
       header.style.cursor = "grab";
-      header.releasePointerCapture(e.pointerId);
+      editor.style.removeProperty("height");
+      header.releasePointerCapture?.(e.pointerId);
     };
 
     const handlePointerCancel = (e: PointerEvent) => {
       if (!isDragging) return;
       isDragging = false;
+      delete editor.dataset.dragging;
       header.style.cursor = "grab";
-      header.releasePointerCapture(e.pointerId);
+      editor.style.removeProperty("height");
+      header.releasePointerCapture?.(e.pointerId);
     };
 
     header.addEventListener("pointerdown", handlePointerDown);
@@ -279,8 +301,6 @@ export function initHitboxEditor({ elements, character, selectors }: InitHitboxE
       header.removeEventListener("pointercancel", handlePointerCancel);
     });
   }
-
-  const hitAreas = ensureHitAreas(character);
 
   const renderEditorParts = () => {
     editorElements.body?.replaceChildren();
@@ -314,7 +334,7 @@ export function initHitboxEditor({ elements, character, selectors }: InitHitboxE
         deleteButton.textContent = "삭제";
         deleteButton.addEventListener("click", () => {
           delete hitAreas[part];
-          saveStoredHitAreas(character, hitAreas);
+          void saveStoredHitAreas(storageAdapter, hitAreas);
           renderEditorParts();
           renderDebugHitAreas();
         });
@@ -356,7 +376,7 @@ export function initHitboxEditor({ elements, character, selectors }: InitHitboxE
           }
 
           hitAreas[part][axis] = value;
-          saveStoredHitAreas(character, hitAreas);
+          void saveStoredHitAreas(storageAdapter, hitAreas);
           renderDebugHitAreas();
         });
 
@@ -384,7 +404,7 @@ export function initHitboxEditor({ elements, character, selectors }: InitHitboxE
     }
 
     hitAreas[cleanId] = { minX: 0.4, maxX: 0.6, minY: 0.4, maxY: 0.6 };
-    saveStoredHitAreas(character, hitAreas);
+    void saveStoredHitAreas(storageAdapter, hitAreas);
     renderEditorParts();
     renderDebugHitAreas();
   };
@@ -399,7 +419,7 @@ export function initHitboxEditor({ elements, character, selectors }: InitHitboxE
 
   const handleCopyClick = () => {
     const data = JSON.stringify({ hitAreas }, null, 2);
-    saveStoredHitAreas(character, hitAreas);
+    void saveStoredHitAreas(storageAdapter, hitAreas);
     navigator.clipboard.writeText(data).then(() => {
       alert(`히트박스 설정이 클립보드에 복사되었습니다!\n\n${data}`);
     });

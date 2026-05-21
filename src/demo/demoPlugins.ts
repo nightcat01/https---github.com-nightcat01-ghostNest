@@ -5,6 +5,10 @@ import { timerPlugin } from "../plugins/timer/index.js";
 import { weatherPlugin } from "../plugins/weather/index.js";
 import type { RuntimePlugin } from "../core/types.js";
 
+/**
+ * Creates the demo plugin set used by the default GhostNest sample.
+ * Replace this preset in src/ghost/nanika.config.ts when wiring real API, DB, or AI features.
+ */
 export function createDemoPlugins(): RuntimePlugin[] {
   return [
     fortunePlugin,

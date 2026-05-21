@@ -1,7 +1,11 @@
-import type { RuntimeRule } from "../core/types.js";
+import type { ManagementMenuItem, RuntimeRule } from "../core/types.js";
 import { createDemoManagementMenuItems } from "./demoManagementMenu.js";
 
-export function createDemoRules(): RuntimeRule[] {
+/**
+ * Creates demo event rules that show how runtime events map to actions.
+ * Pass menu items from the caller when the host wants to customize the demo menu tree.
+ */
+export function createDemoRules(menuItems: ManagementMenuItem[] = createDemoManagementMenuItems()): RuntimeRule[] {
   return [
     {
       id: "demo.character.right_click.management_menu",
@@ -13,7 +17,7 @@ export function createDemoRules(): RuntimeRule[] {
         {
           type: "open_management_menu",
           title: "관리 메뉴",
-          items: createDemoManagementMenuItems(),
+          items: menuItems,
         },
         { type: "log", label: "character:right_click.management_menu" },
       ],

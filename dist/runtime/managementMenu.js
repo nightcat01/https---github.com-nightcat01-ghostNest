@@ -23,6 +23,9 @@ function makePanelMenuDraggable(menuElement, handleElement) {
     let initialX = 0;
     let initialY = 0;
     handleElement.addEventListener("pointerdown", (event) => {
+        if (event.button !== 0) {
+            return;
+        }
         isDragging = true;
         startX = event.clientX;
         startY = event.clientY;
@@ -30,13 +33,14 @@ function makePanelMenuDraggable(menuElement, handleElement) {
         const parentRect = (menuElement.offsetParent ?? document.documentElement).getBoundingClientRect();
         initialX = menuRect.left - parentRect.left;
         initialY = menuRect.top - parentRect.top;
+        menuElement.style.width = `${menuRect.width}px`;
+        menuElement.style.height = `${menuRect.height}px`;
         menuElement.style.right = "auto";
         menuElement.style.bottom = "auto";
         menuElement.style.left = `${initialX}px`;
         menuElement.style.top = `${initialY}px`;
-        menuElement.style.height = `${menuElement.getBoundingClientRect().height}px`;
         menuElement.dataset.dragging = "true";
-        handleElement.setPointerCapture(event.pointerId);
+        handleElement.setPointerCapture?.(event.pointerId);
     });
     handleElement.addEventListener("pointermove", (event) => {
         if (!isDragging) {
@@ -60,12 +64,15 @@ function makePanelMenuDraggable(menuElement, handleElement) {
         isDragging = false;
         delete menuElement.dataset.dragging;
         menuElement.style.removeProperty("height");
-        handleElement.releasePointerCapture(event.pointerId);
+        handleElement.releasePointerCapture?.(event.pointerId);
     };
     handleElement.addEventListener("pointerup", stopDragging);
     handleElement.addEventListener("pointercancel", stopDragging);
 }
 function renderMenuContent({ action, targets, runActions, previewItem, currentItems = action.items, parentItems, menuTitle = action.title, display, menuElement, }) {
+    const contentElement = display === "panel"
+        ? document.createElement("div")
+        : menuElement;
     if (menuTitle) {
         const titleElement = document.createElement("strong");
         titleElement.className = "management-menu-title";
@@ -74,6 +81,10 @@ function renderMenuContent({ action, targets, runActions, previewItem, currentIt
             makePanelMenuDraggable(menuElement, titleElement);
         }
         menuElement.append(titleElement);
+    }
+    if (display === "panel") {
+        contentElement.className = "management-menu-body";
+        menuElement.append(contentElement);
     }
     if (parentItems) {
         const backButton = document.createElement("button");
@@ -91,7 +102,7 @@ function renderMenuContent({ action, targets, runActions, previewItem, currentIt
                 display,
             });
         });
-        menuElement.append(backButton);
+        contentElement.append(backButton);
     }
     currentItems.forEach((item) => {
         const button = document.createElement("button");
@@ -120,9 +131,13 @@ function renderMenuContent({ action, targets, runActions, previewItem, currentIt
             }
             void runActions([...(item.actions ?? []), { type: "close_management_menu" }]);
         });
-        menuElement.append(button);
+        contentElement.append(button);
     });
 }
+/**
+ * Renders a management menu into the selected UI target.
+ * The runtime owns action execution, while this renderer owns DOM shape and menu navigation.
+ */
 export function renderManagementMenu({ action, targets, runActions, previewItem, currentItems = action.items, parentItems, menuTitle = action.title, display, }) {
     const menuElement = getMenuElement(targets, display);
     if (!menuElement) {
@@ -144,10 +159,16 @@ export function renderManagementMenu({ action, targets, runActions, previewItem,
     });
     menuElement.hidden = false;
 }
+/**
+ * Clears all management menu targets.
+ */
 export function closeManagementMenu(targets) {
     closeMenuElement(targets.balloon);
     closeMenuElement(targets.panel);
 }
+/**
+ * Resolves whether a menu should open in the balloon, panel, or a custom display slot.
+ */
 export function resolveManagementMenuDisplay(action, options) {
     if (action.menuId && options?.displays?.[action.menuId]) {
         return options.displays[action.menuId] ?? defaultDisplay;
