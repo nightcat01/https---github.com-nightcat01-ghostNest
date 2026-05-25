@@ -1,12 +1,31 @@
 {
   "name": "ghost-nest",
   "version": "0.1.0",
-  "private": true,
+  "description": "A lightweight browser runtime for interactive ghost-style characters.",
+  "license": "UNLICENSED",
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nightcat01/ghost-nest.git"
+  },
   "scripts": {
     "build": "tsc",
     "dev": "node server.cjs",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "prepublishOnly": "npm run check && npm run build"
   },
   "devDependencies": {
     "typescript": "^5.8.3"
