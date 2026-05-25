@@ -1,1 +1,0 @@
-{"version":3,"file":"index.js","sourceRoot":"","sources":["../../../src/plugins/timer/index.ts"],"names":[],"mappings":"AAEA,MAAM,CAAC,MAAM,WAAW,GAAkB;IACxC,EAAE,EAAE,OAAO;IACX,IAAI,EAAE,YAAY;IAClB,WAAW,EAAE,qDAAqD;IAClE;;OAEG;IACH,OAAO,EAAE,GAAG,EAAE;QACZ,OAAO;YACL,KAAK,EAAE,QAAQ;YACf,OAAO,EAAE,4BAA4B;YACrC,UAAU,EAAE,OAAO;SACpB,CAAC;IACJ,CAAC;CACF,CAAC"}

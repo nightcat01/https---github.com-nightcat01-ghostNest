@@ -1,1 +1,0 @@
-{"version":3,"file":"demoManagementMenu.d.ts","sourceRoot":"","sources":["../../src/demo/demoManagementMenu.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,mBAAmB,EAAE,kBAAkB,EAAE,MAAM,kBAAkB,CAAC;AAOhF,MAAM,MAAM,yBAAyB,GAAG;IACtC,qBAAqB,CAAC,EAAE,OAAO,CAAC;CACjC,CAAC;AAWF;;;GAGG;AACH,wBAAgB,6BAA6B,CAC3C,SAAS,CAAC,EAAE,mBAAmB,EAC/B,OAAO,GAAE,yBAA8B,GACtC,kBAAkB,EAAE,CAatB"}
