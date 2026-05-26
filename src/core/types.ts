@@ -92,6 +92,37 @@ export type CharacterSurface = {
   };
 };
 
+export type RuntimeSceneLayerRole = "background" | "character" | "prop" | "foreground" | "effect" | (string & {});
+
+export type RuntimeSceneLayer = {
+  id: string;
+  role: RuntimeSceneLayerRole;
+  image?: string;
+  color?: string;
+  depth?: number;
+  alt?: string;
+  className?: string;
+  placement?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    unit?: "percent";
+  };
+};
+
+export type RuntimeScene = {
+  id: string;
+  layers: RuntimeSceneLayer[];
+};
+
+export type RuntimeSceneOptions = {
+  defaultScene?: string;
+  layers?: RuntimeSceneLayer[];
+  scenes?: Record<string, RuntimeScene>;
+  sceneSets?: Record<string, RuntimeScene[]>;
+};
+
 export type CharacterTouchPart = string & {};
 
 export type InteractiveAreaId = "runtimeTitle" | "eventLog" | "commandMenu" | (string & {});
@@ -138,6 +169,7 @@ export type DialogueToken =
   | {
       type: "surface";
       id: string;
+      startIdleLayers?: boolean;
     }
   | {
       type: "clear";
@@ -180,6 +212,7 @@ export type BuiltinRuntimeAction =
   | {
       type: "surface";
       id: string;
+      startIdleLayers?: boolean;
     }
   | {
       type: "set_touched_part";
@@ -463,6 +496,7 @@ export type GhostRuntimeOptions = {
   character: CharacterDefinition;
   plugins?: RuntimePlugin[];
   selectors: RuntimeSelectors;
+  scene?: RuntimeSceneOptions;
   devtools?: RuntimeDevtoolsOptions;
   managementMenu?: ManagementMenuOptions;
   timing?: Partial<RuntimeTimingOptions>;

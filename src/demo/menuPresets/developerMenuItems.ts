@@ -1,6 +1,7 @@
 import type { ManagementMenuItem } from "../../core/types.js";
-import { createAssetGeneratorMenuItem } from "../../plugins/assetGenerator/index.js";
 import { enabledExtensions } from "../../ghost/nanika.config.js";
+import { createCharacterSettingsMenuItem } from "../../plugins/characterSettings/index.js";
+import { createComfyAssetGeneratorMenuItem } from "../../plugins/comfyAssetGenerator/index.js";
 
 /**
  * Creates demo-only developer tools that should not be mixed into the normal user menu by default.
@@ -57,8 +58,12 @@ export function createDeveloperMenuItems(): ManagementMenuItem[] {
     },
   ];
 
-  if (enabledExtensions["asset-generator"]?.enabled) {
-    menuItems.push(createAssetGeneratorMenuItem());
+  if (enabledExtensions["character-settings"]?.enabled) {
+    menuItems.push(createCharacterSettingsMenuItem());
+  }
+
+  if (enabledExtensions["comfy-asset-generator"]?.enabled) {
+    menuItems.push(createComfyAssetGeneratorMenuItem());
   }
 
   return menuItems;

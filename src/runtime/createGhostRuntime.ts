@@ -9,6 +9,7 @@ import { createActionRunner } from "./actionRunner.js";
 import { createCharacterRenderer } from "./characterRenderer.js";
 import { createDefaultRules } from "./defaultRules.js";
 import { createDialoguePlayer } from "./dialoguePlayer.js";
+import { createSceneRenderer } from "./sceneRenderer.js";
 import { getRuntimeElements } from "./domElements.js";
 import { initFloatingLayout } from "./floatingLayout.js";
 import { initHitboxEditor } from "../devtools/hitboxEditor.js";
@@ -67,6 +68,7 @@ export function createGhostRuntime(options: GhostRuntimeOptions): GhostRuntime {
   const cleanupCallbacks: Array<() => void> = [];
   const actionTimers = new Map<string, number>();
   const ruleCooldowns = new Map<string, number>();
+  const sceneRenderer = createSceneRenderer({ elements, scene: options.scene });
   const characterRenderer = createCharacterRenderer({ elements, character: options.character });
   const diagnostics = createRuntimeDiagnostics({
     selectors: options.devtools?.diagnostics?.selectors,
@@ -293,6 +295,7 @@ export function createGhostRuntime(options: GhostRuntimeOptions): GhostRuntime {
 
   cleanupCallbacks.push(() => {
     dialoguePlayer.stop();
+    sceneRenderer.destroy();
     characterRenderer.destroy();
 
     actionTimers.forEach((timerId) => window.clearTimeout(timerId));

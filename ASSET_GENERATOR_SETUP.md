@@ -1,14 +1,14 @@
-# Asset Generator Setup
+# Comfy Asset Generator Setup
 
-This guide explains how the `asset-generator` extension starts and connects to ComfyUI.
+This guide explains how the `comfy-asset-generator` extension starts and connects to ComfyUI.
 
 ## Runtime Model
 
 The extension has two separate parts.
 
-1. GhostNest Asset Generator
+1. GhostNest Comfy Asset Generator
    - Included in this project.
-   - Provides `dev-assets.html`.
+   - Provides `dev-assets-comfy.html`.
    - Provides the same-origin bridge API under the GhostNest dev server.
 
 2. ComfyUI
@@ -25,7 +25,10 @@ Configure `ghost-nest.extensions.json`.
 ```json
 {
   "extensions": {
-    "asset-generator": {
+    "character-settings": {
+      "enabled": true
+    },
+    "comfy-asset-generator": {
       "enabled": true,
       "devServer": {
         "bridge": true,
@@ -87,7 +90,7 @@ The first existing file is used.
 
 ## Workflow Source Modes
 
-The Asset Generator page supports three workflow source modes.
+The Comfy Asset Generator page supports three workflow source modes.
 
 1. Server file path
    - Default mode.
@@ -133,7 +136,7 @@ and black areas indicate the surrounding crop pixels that should be preserved.
 `{{target_region}}` and the split target-region placeholders describe the selected part area in percentage coordinates.
 They are intended for crop, mask, inpaint, and transparent layer-part workflows.
 
-When a target region is selected, the Asset Generator creates a cropped PNG in the browser and sends it as
+When a target region is selected, the Comfy Asset Generator creates a cropped PNG in the browser and sends it as
 `croppedBaseImageDataUrl`. The bridge uploads that crop to ComfyUI as `{{input_image}}`, so the default workflow edits
 the selected part area instead of the full base image.
 
@@ -152,7 +155,7 @@ GhostNest also applies common values automatically for typical ComfyUI nodes:
 GhostNest prints the configured bridge target when it starts.
 
 ```txt
-GhostNest Asset Generator bridge enabled: true
+GhostNest Comfy Asset Generator bridge enabled: true
 GhostNest ComfyUI bridge target: http://127.0.0.1:8188
 GhostNest ComfyUI workflow path: ...
 ```

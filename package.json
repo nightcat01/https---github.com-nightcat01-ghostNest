@@ -17,6 +17,8 @@
     "dist",
     "ghost-nest.extensions.json",
     "dev-assets.html",
+    "dev-character.html",
+    "dev-character-composition.html",
     "dev-assets-crop.html",
     "dev-assets-comfy.html",
     "dev-assets-layer.html",

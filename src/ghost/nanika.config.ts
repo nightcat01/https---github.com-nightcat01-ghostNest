@@ -4,15 +4,18 @@ import type {
   ManagementMenuOptions,
   RuntimeDevtoolsOptions,
   RuntimeFeatureOptions,
+  RuntimeSceneOptions,
   RuntimePlugin,
   RuntimeSelectors,
   SpeechTypingOptions,
 } from "../core/types.js";
 import { createDemoPlugins } from "../demo/demoPlugins.js";
-import { assetGeneratorExtensionConfig } from "../plugins/assetGenerator/index.js";
+import { characterSettingsExtensionConfig } from "../plugins/characterSettings/index.js";
+import { comfyAssetGeneratorExtensionConfig } from "../plugins/comfyAssetGenerator/index.js";
 
 export const enabledExtensions = {
-  "asset-generator": assetGeneratorExtensionConfig,
+  "character-settings": characterSettingsExtensionConfig,
+  "comfy-asset-generator": comfyAssetGeneratorExtensionConfig,
 } as const;
 
 /**
@@ -97,6 +100,46 @@ const typingOptions = {
 } satisfies Partial<SpeechTypingOptions>;
 
 /**
+ * Keeps room/background/prop composition outside the character surface definition.
+ */
+const sceneOptions = {
+  defaultScene: "desk-room",
+  sceneSets: {
+    "desk-room": [
+      {
+        id: "desk-room-default",
+        layers: [
+          {
+            id: "room-backdrop",
+            role: "background",
+            className: "scene-layer-room-backdrop",
+            depth: 0,
+          },
+          {
+            id: "character-slot",
+            role: "character",
+            depth: 20,
+          },
+          {
+            id: "desk-prop",
+            role: "prop",
+            className: "scene-layer-desk-prop",
+            depth: 30,
+            placement: {
+              x: 20,
+              y: 74,
+              width: 80,
+              height: 25,
+              unit: "percent",
+            },
+          },
+        ],
+      },
+    ],
+  },
+} satisfies RuntimeSceneOptions;
+
+/**
  * Sets the rendered character size for desktop and mobile breakpoints.
  */
 const spriteSizeOptions = {
@@ -115,6 +158,7 @@ export const nanikaConfig = {
   selectors: runtimeSelectors,
   devtools: devtoolOptions,
   managementMenu: managementMenuOptions,
+  scene: sceneOptions,
   features: featureOptions,
   typing: typingOptions,
   spriteSize: spriteSizeOptions,

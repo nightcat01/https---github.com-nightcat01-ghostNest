@@ -1,11 +1,13 @@
 import {
   LabImage,
+  loadRegionOverlayVisible,
   loadStoredRegion,
   PartRecipeId,
   readImageFile,
   recipes,
   requireElement,
   resolveAssetPath,
+  saveRegionOverlayVisible,
   saveStoredRegion,
   TargetRegion,
 } from "./assetShared.js";
@@ -41,7 +43,22 @@ type CharacterListResponse = {
   message?: string;
   characters?: string[];
 };
+type AssetFile = {
+  fileName: string;
+  kind: "base" | "part" | "scene" | "asset";
+  path: string;
+  scope?: "character" | "common";
+  size?: number;
+  updatedAt?: string;
+};
+type AssetFilesResponse = {
+  ok?: boolean;
+  error?: string;
+  message?: string;
+  files?: AssetFile[];
+};
 type LayerImage = LabImage & { assetPath?: string };
+type AssetSaveKind = "base" | "parts";
 type RegionDragMode = "move" | "resize-nw" | "resize-ne" | "resize-se" | "resize-sw";
 type RegionDragState = {
   mode: RegionDragMode;
@@ -117,6 +134,8 @@ let partImages: LayerImage[] = [];
 let baseImage: LabImage | null = null;
 let existingSurfaces: ExistingSurface[] = [];
 let existingLayers: ExistingLayer[] = [];
+let savedAssetFiles: AssetFile[] = [];
+let storedLayerSettings: StoredLayerSettings | null = null;
 let currentRegion = loadStoredRegion(recipes.eyeBlink.defaultTargetRegion);
 let selectedFrameIndex = 0;
 let isPreviewingBaseFrame = false;
@@ -147,6 +166,7 @@ const coversBaseField = requireElement(document.querySelector<HTMLElement>("#cov
 const layerStorageSection = requireElement(document.querySelector<HTMLElement>("#layerStorageSection"), "#layerStorageSection");
 const layerPreviewSection = requireElement(document.querySelector<HTMLElement>("#layerPreviewSection"), "#layerPreviewSection");
 const layerOutputSection = requireElement(document.querySelector<HTMLElement>("#layerOutputSection"), "#layerOutputSection");
+const assetSaveKindSelect = requireElement(document.querySelector<HTMLSelectElement>("#assetSaveKindSelect"), "#assetSaveKindSelect");
 const basePathInput = requireElement(document.querySelector<HTMLInputElement>("#basePathInput"), "#basePathInput");
 const saveDirectoryInput = requireElement(document.querySelector<HTMLInputElement>("#saveDirectoryInput"), "#saveDirectoryInput");
 const surfaceIdInput = requireElement(document.querySelector<HTMLInputElement>("#surfaceIdInput"), "#surfaceIdInput");
@@ -157,7 +177,15 @@ const intervalInput = requireElement(document.querySelector<HTMLInputElement>("#
 const idleIntervalInput = requireElement(document.querySelector<HTMLInputElement>("#idleIntervalInput"), "#idleIntervalInput");
 const coversBaseInput = requireElement(document.querySelector<HTMLInputElement>("#coversBaseInput"), "#coversBaseInput");
 const baseImageInput = requireElement(document.querySelector<HTMLInputElement>("#baseImageInput"), "#baseImageInput");
+const baseAssetSelect = requireElement(document.querySelector<HTMLSelectElement>("#baseAssetSelect"), "#baseAssetSelect");
 const partImagesInput = requireElement(document.querySelector<HTMLInputElement>("#partImagesInput"), "#partImagesInput");
+const partAssetSelect = requireElement(document.querySelector<HTMLSelectElement>("#partAssetSelect"), "#partAssetSelect");
+const addPartAssetFramesButton = requireElement(document.querySelector<HTMLButtonElement>("#addPartAssetFramesButton"), "#addPartAssetFramesButton");
+const frameListSelect = requireElement(document.querySelector<HTMLSelectElement>("#frameListSelect"), "#frameListSelect");
+const moveFrameUpButton = requireElement(document.querySelector<HTMLButtonElement>("#moveFrameUpButton"), "#moveFrameUpButton");
+const moveFrameDownButton = requireElement(document.querySelector<HTMLButtonElement>("#moveFrameDownButton"), "#moveFrameDownButton");
+const removeFrameButton = requireElement(document.querySelector<HTMLButtonElement>("#removeFrameButton"), "#removeFrameButton");
+const clearFramesButton = requireElement(document.querySelector<HTMLButtonElement>("#clearFramesButton"), "#clearFramesButton");
 const layerPreview = requireElement(document.querySelector<HTMLElement>("#layerPreview"), "#layerPreview");
 const layerSummary = requireElement(document.querySelector<HTMLElement>("#layerSummary"), "#layerSummary");
 const layerOutput = requireElement(document.querySelector<HTMLElement>("#layerSnippetOutput"), "#layerSnippetOutput");
@@ -170,6 +198,7 @@ const copyManifestButton = requireElement(document.querySelector<HTMLButtonEleme
 const previousFrameButton = requireElement(document.querySelector<HTMLButtonElement>("#previousFrameButton"), "#previousFrameButton");
 const playFramesButton = requireElement(document.querySelector<HTMLButtonElement>("#playFramesButton"), "#playFramesButton");
 const nextFrameButton = requireElement(document.querySelector<HTMLButtonElement>("#nextFrameButton"), "#nextFrameButton");
+const regionOverlayVisibleInput = requireElement(document.querySelector<HTMLInputElement>("#regionOverlayVisibleInput"), "#regionOverlayVisibleInput");
 const regionInputs = {
   x: requireElement(document.querySelector<HTMLInputElement>("#targetRegionXInput"), "#targetRegionXInput"),
   y: requireElement(document.querySelector<HTMLInputElement>("#targetRegionYInput"), "#targetRegionYInput"),
@@ -186,9 +215,61 @@ type StoredLayerSettings = {
   intervalMs?: number;
   idleIntervalMs?: number;
   coversBase?: boolean;
+  assetSaveKind?: AssetSaveKind;
   basePath?: string;
   saveDirectory?: string;
+  baseAssetPath?: string;
+  partAssetPaths?: string[];
 };
+
+/**
+ * Returns the active character id used for character asset paths.
+ */
+function getActiveCharacterId() {
+  return characterSelect.value || characterIdInput.value.trim() || "rine";
+}
+
+/**
+ * Builds the browser-facing asset path prefix for the selected character folder.
+ */
+function createCharacterAssetBasePath(assetSaveKind: AssetSaveKind) {
+  return `./src/characters/${getActiveCharacterId()}/assets/${assetSaveKind}/`;
+}
+
+/**
+ * Builds the project-relative save directory for the selected character folder.
+ */
+function createCharacterAssetSaveDirectory(assetSaveKind: AssetSaveKind) {
+  return `src/characters/${getActiveCharacterId()}/assets/${assetSaveKind}`;
+}
+
+/**
+ * Reads the current folder choice while keeping unknown values on the safer parts path.
+ */
+function getAssetSaveKind(): AssetSaveKind {
+  return assetSaveKindSelect.value === "base" ? "base" : "parts";
+}
+
+/**
+ * Infers the folder choice from restored path fields.
+ */
+function inferAssetSaveKind(settings: StoredLayerSettings | null): AssetSaveKind {
+  const configuredPath = `${settings?.basePath ?? ""} ${settings?.saveDirectory ?? ""}`;
+
+  return configuredPath.includes("/assets/base") || configuredPath.includes("\\assets\\base")
+    ? "base"
+    : "parts";
+}
+
+/**
+ * Applies the selected character asset folder to both editable path fields.
+ */
+function syncAssetSavePathsFromKind() {
+  const assetSaveKind = getAssetSaveKind();
+
+  basePathInput.value = createCharacterAssetBasePath(assetSaveKind);
+  saveDirectoryInput.value = createCharacterAssetSaveDirectory(assetSaveKind);
+}
 
 /**
  * Reads and stores the placement region used by the generated layer snippet.
@@ -210,6 +291,7 @@ function readRegion(): TargetRegion {
  * Saves the current layer form values so reopening the page restores the last setup.
  */
 function saveLayerSettings() {
+  const baseAssetPath = "assetPath" in (baseImage ?? {}) ? (baseImage as LayerImage).assetPath : undefined;
   const settings: StoredLayerSettings = {
     recipeId: recipeSelect.value as PartRecipeId,
     characterId: characterSelect.value || characterIdInput.value,
@@ -219,11 +301,15 @@ function saveLayerSettings() {
     intervalMs: Number(intervalInput.value),
     idleIntervalMs: Number(idleIntervalInput.value),
     coversBase: coversBaseInput.checked,
+    assetSaveKind: getAssetSaveKind(),
     basePath: basePathInput.value,
     saveDirectory: saveDirectoryInput.value,
+    partAssetPaths: partImages.map((image) => image.assetPath).filter((assetPath): assetPath is string => Boolean(assetPath)),
+    ...(baseAssetPath ? { baseAssetPath } : {}),
   };
 
   window.localStorage.setItem(layerSettingsStorageKey, JSON.stringify(settings));
+  storedLayerSettings = settings;
 }
 
 /**
@@ -233,6 +319,7 @@ function loadLayerSettings() {
   try {
     const rawValue = window.localStorage.getItem(layerSettingsStorageKey);
     const settings = rawValue ? JSON.parse(rawValue) as StoredLayerSettings : null;
+    storedLayerSettings = settings;
 
     if (!settings) {
       return;
@@ -250,8 +337,9 @@ function loadLayerSettings() {
     intervalInput.value = String(settings.intervalMs ?? Number(intervalInput.value) ?? 4200);
     idleIntervalInput.value = String(settings.idleIntervalMs ?? Number(idleIntervalInput.value) ?? 0);
     coversBaseInput.checked = settings.coversBase ?? coversBaseInput.checked;
-    basePathInput.value = settings.basePath ?? basePathInput.value;
-    saveDirectoryInput.value = settings.saveDirectory ?? saveDirectoryInput.value;
+    assetSaveKindSelect.value = settings.assetSaveKind ?? inferAssetSaveKind(settings);
+    basePathInput.value = settings.basePath ?? createCharacterAssetBasePath(getAssetSaveKind());
+    saveDirectoryInput.value = settings.saveDirectory ?? createCharacterAssetSaveDirectory(getAssetSaveKind());
   } catch {
     // 저장된 개발도구 설정이 깨져도 페이지 사용은 계속 가능해야 합니다.
   }
@@ -452,6 +540,44 @@ function hasSurfaceSelection() {
 }
 
 /**
+ * Returns the saved Set that will receive the current layer.
+ */
+function getTargetSurface() {
+  const surfaceId = surfaceSelect.value === newSurfaceSelectValue ? surfaceIdInput.value.trim() : surfaceSelect.value;
+
+  return existingSurfaces.find((surface) => surface.surfaceId === surfaceId) ?? null;
+}
+
+/**
+ * Ensures layers are only saved onto a Set that can be reached from an expression.
+ */
+function validateLayerSaveTarget() {
+  if (!hasSurfaceSelection()) {
+    return "Layer를 저장할 Set을 먼저 선택하세요.";
+  }
+
+  if (surfaceSelect.value === newSurfaceSelectValue) {
+    return "새 Set에는 바로 Layer를 저장하지 말고, Set 조합하기에서 expression과 base를 먼저 저장하세요.";
+  }
+
+  const surface = getTargetSurface();
+
+  if (!surface) {
+    return "선택한 Set 정보를 찾지 못했어요. 캐릭터를 다시 불러온 뒤 시도하세요.";
+  }
+
+  if (!surface.expression) {
+    return "이 Set에는 expression이 연결되어 있지 않아요. Set 조합하기에서 Surface expression을 먼저 저장하세요.";
+  }
+
+  if (!surface.image) {
+    return "이 Set에는 base 이미지가 없어요. Set 조합하기에서 Set Base 이미지를 먼저 저장하세요.";
+  }
+
+  return null;
+}
+
+/**
  * Shows layer detail controls only after the first selection step is complete.
  */
 function renderLayerSelectionStep() {
@@ -465,8 +591,6 @@ function renderLayerSelectionStep() {
   [
     layerConfigFields,
     coversBaseField,
-    layerStorageSection,
-    layerPreviewSection,
     layerOutputSection,
   ].forEach((element) => {
     element.hidden = !shouldShowLayerDetails;
@@ -474,7 +598,10 @@ function renderLayerSelectionStep() {
   surfaceSelectField.hidden = !shouldShowSurface;
   layerSelectField.hidden = !shouldShowLayer;
   surfaceIdField.hidden = !shouldShowNewSurfaceInput;
+  layerStorageSection.hidden = !shouldShowLayer;
+  layerPreviewSection.hidden = !shouldShowLayer;
   partRecipeField.hidden = !shouldShowLayerDetails || !shouldShowRecipe;
+  saveButton.disabled = !hasLayerSelection();
   deleteButton.disabled = !getSelectedExistingLayer();
 }
 
@@ -497,6 +624,301 @@ function createAssetPathImage(assetPath: string): LayerImage {
     dataUrl: assetPath,
     assetPath,
   };
+}
+
+/**
+ * Converts a saved project asset record into the image shape used by layer previews.
+ */
+function createSavedAssetImage(assetFile: AssetFile): LayerImage {
+  return createAssetPathImage(assetFile.path);
+}
+
+/**
+ * Keeps saved asset pickers in sync with the selected character.
+ */
+function renderSavedAssetOptions() {
+  const baseAssets = savedAssetFiles.filter((assetFile) => assetFile.kind === "base" && assetFile.scope !== "common");
+  const partAssets = savedAssetFiles.filter((assetFile) => assetFile.kind === "part");
+
+  baseAssetSelect.replaceChildren(new Option(baseAssets.length > 0 ? "기본 이미지 초기화" : "assets/base 이미지가 없어요.", ""));
+  partAssetSelect.replaceChildren();
+
+  if (partAssets.length === 0) {
+    partAssetSelect.append(new Option("assets/parts 이미지가 없어요.", ""));
+  } else {
+    partAssetSelect.append(new Option("파츠 선택 없음", ""));
+  }
+
+  baseAssets.forEach((assetFile) => {
+    const label = createSavedAssetOptionLabel(assetFile);
+
+    baseAssetSelect.append(new Option(label, assetFile.path));
+  });
+  partAssets.forEach((assetFile) => {
+    const label = createSavedAssetOptionLabel(assetFile);
+
+    partAssetSelect.append(new Option(label, assetFile.path));
+  });
+}
+
+/**
+ * Labels saved assets with their scope so common resources are easy to spot.
+ */
+function createSavedAssetOptionLabel(assetFile: AssetFile) {
+  const trimmedPath = assetFile.path
+    .replace("./src/characters/", "")
+    .replace("./src/assets/common/", "common/");
+  const prefix = assetFile.scope === "common" ? "common / " : "";
+
+  return `${prefix}${trimmedPath}`;
+}
+
+/**
+ * Syncs image preview state from the saved asset select controls.
+ */
+function syncSelectedAssetImagesFromControls() {
+  const selectedBaseAsset = savedAssetFiles.find((assetFile) => assetFile.path === baseAssetSelect.value);
+  const selectedPartAssets = Array.from(partAssetSelect.selectedOptions)
+    .filter((option) => option.value !== "")
+    .map((option) => savedAssetFiles.find((assetFile) => assetFile.path === option.value))
+    .filter((assetFile): assetFile is AssetFile => Boolean(assetFile));
+
+  if (selectedBaseAsset) {
+    baseImage = createSavedAssetImage(selectedBaseAsset);
+  }
+
+  if (selectedPartAssets.length > 0) {
+    partImages = selectedPartAssets.map(createSavedAssetImage);
+    selectedFrameIndex = 0;
+    isPreviewingBaseFrame = false;
+  }
+}
+
+/**
+ * Refreshes the editable frame list and its ordering controls.
+ */
+function renderFrameList() {
+  frameListSelect.replaceChildren();
+  partImages.forEach((image, index) => {
+    const option = new Option(`${index + 1}. ${image.fileName}`, String(index));
+
+    option.selected = index === selectedFrameIndex && !isPreviewingBaseFrame;
+    frameListSelect.append(option);
+  });
+
+  const hasSelectedFrame = partImages.length > 0 && selectedFrameIndex >= 0 && selectedFrameIndex < partImages.length;
+
+  moveFrameUpButton.disabled = !hasSelectedFrame || selectedFrameIndex === 0;
+  moveFrameDownButton.disabled = !hasSelectedFrame || selectedFrameIndex >= partImages.length - 1;
+  removeFrameButton.disabled = !hasSelectedFrame;
+  clearFramesButton.disabled = partImages.length === 0;
+}
+
+/**
+ * Appends frames while preserving the existing frame order.
+ */
+function appendPartFrames(images: LayerImage[]) {
+  if (images.length === 0) {
+    return;
+  }
+
+  partImages = [...partImages, ...images];
+  selectedFrameIndex = Math.max(0, partImages.length - images.length);
+  isPreviewingBaseFrame = false;
+}
+
+/**
+ * Adds the selected saved part assets to the frame list.
+ */
+function appendSelectedPartAssetFrames() {
+  if (Array.from(partAssetSelect.selectedOptions).some((option) => option.value === "")) {
+    return;
+  }
+
+  const selectedPartAssets = Array.from(partAssetSelect.selectedOptions)
+    .map((option) => savedAssetFiles.find((assetFile) => assetFile.path === option.value))
+    .filter((assetFile): assetFile is AssetFile => Boolean(assetFile));
+
+  appendPartFrames(selectedPartAssets.map(createSavedAssetImage));
+  renderOutputs();
+}
+
+/**
+ * Selects a frame from the editable frame list.
+ */
+function selectFrameFromList() {
+  selectedFrameIndex = Number(frameListSelect.value) || 0;
+  isPreviewingBaseFrame = false;
+  renderOutputs();
+}
+
+/**
+ * Moves the currently selected saved frame up or down.
+ */
+function moveSelectedFrame(offset: number) {
+  const nextIndex = selectedFrameIndex + offset;
+
+  if (nextIndex < 0 || nextIndex >= partImages.length) {
+    return;
+  }
+
+  const nextImages = [...partImages];
+  const currentImage = nextImages[selectedFrameIndex];
+  const targetImage = nextImages[nextIndex];
+
+  if (!currentImage || !targetImage) {
+    return;
+  }
+
+  nextImages[selectedFrameIndex] = targetImage;
+  nextImages[nextIndex] = currentImage;
+  partImages = nextImages;
+  selectedFrameIndex = nextIndex;
+  isPreviewingBaseFrame = false;
+  renderOutputs();
+}
+
+/**
+ * Removes the selected frame from the editable frame list.
+ */
+function removeSelectedFrame() {
+  if (partImages.length === 0) {
+    return;
+  }
+
+  partImages = partImages.filter((_, index) => index !== selectedFrameIndex);
+  selectedFrameIndex = Math.min(selectedFrameIndex, Math.max(0, partImages.length - 1));
+  isPreviewingBaseFrame = false;
+  renderOutputs();
+}
+
+/**
+ * Clears all editable layer frames.
+ */
+function clearFrames() {
+  partImages = [];
+  selectedFrameIndex = 0;
+  isPreviewingBaseFrame = false;
+  renderOutputs();
+}
+
+/**
+ * Loads image files already saved under the selected character asset directory.
+ */
+async function loadSavedAssetFiles() {
+  const characterId = characterSelect.value || characterIdInput.value.trim() || "rine";
+
+  baseAssetSelect.replaceChildren(new Option("저장된 에셋을 불러오는 중이에요.", ""));
+  partAssetSelect.replaceChildren(new Option("저장된 에셋을 불러오는 중이에요.", ""));
+
+  try {
+    const response = await fetch(`/api/devtools/asset-files?characterId=${encodeURIComponent(characterId)}`);
+    const result = await readApiJson<AssetFilesResponse>(response);
+
+    if (!response.ok || !result.ok) {
+      throw new Error(result.message ?? result.error ?? "저장된 에셋 목록을 불러오지 못했어요.");
+    }
+
+    savedAssetFiles = result.files ?? [];
+    renderSavedAssetOptions();
+  } catch (error) {
+    savedAssetFiles = [];
+    baseAssetSelect.replaceChildren(new Option("저장된 에셋을 불러오지 못했어요.", ""));
+    partAssetSelect.replaceChildren(new Option("저장된 에셋을 불러오지 못했어요.", ""));
+    status.textContent = error instanceof Error ? error.message : "저장된 에셋 목록을 불러오지 못했어요.";
+  }
+}
+
+/**
+ * Applies one saved project image as the base preview image.
+ */
+function applySavedBaseAsset() {
+  if (baseAssetSelect.value === "") {
+    baseImage = null;
+    renderOutputs();
+    return;
+  }
+
+  syncSelectedAssetImagesFromControls();
+  renderOutputs();
+}
+
+/**
+ * Applies selected saved project images as layer frames.
+ */
+function applySavedPartAssets() {
+  if (Array.from(partAssetSelect.selectedOptions).some((option) => option.value === "")) {
+    Array.from(partAssetSelect.options).forEach((option) => {
+      option.selected = false;
+    });
+    return;
+  }
+}
+
+/**
+ * Restores saved base and part image selections after the asset list is loaded.
+ */
+function restoreSavedAssetSelection() {
+  const baseAssetPath = storedLayerSettings?.baseAssetPath;
+  const partAssetPaths = storedLayerSettings?.partAssetPaths ?? [];
+
+  if (baseAssetPath) {
+    const baseAssetFile = savedAssetFiles.find((assetFile) => assetFile.path === baseAssetPath && assetFile.kind === "base");
+
+    if (baseAssetFile) {
+      baseAssetSelect.value = baseAssetFile.path;
+    }
+  }
+
+  if (partAssetPaths.length > 0) {
+    Array.from(partAssetSelect.options).forEach((option) => {
+      const assetFile = savedAssetFiles.find((candidate) => candidate.path === option.value);
+
+      option.selected = Boolean(assetFile && partAssetPaths.includes(assetFile.path));
+    });
+  }
+
+  syncSelectedAssetImagesFromControls();
+}
+
+/**
+ * Reopens the surface and layer that were active before a reload.
+ */
+function restoreLayerSelection() {
+  const preferredSurfaceId = storedLayerSettings?.surfaceId || surfaceIdInput.value.trim();
+
+  if (!preferredSurfaceId) {
+    return;
+  }
+
+  const matchingSurface = existingSurfaces.find((surface) => surface.surfaceId === preferredSurfaceId);
+
+  if (matchingSurface) {
+    surfaceSelect.value = matchingSurface.surfaceId;
+    surfaceIdInput.value = matchingSurface.surfaceId;
+  } else if (surfaceSelect.value !== newSurfaceSelectValue) {
+    surfaceSelect.value = newSurfaceSelectValue;
+    surfaceIdInput.value = preferredSurfaceId;
+  }
+
+  renderLayerOptionsForSurface();
+
+  const preferredLayerId = storedLayerSettings?.layerId === "etc"
+    ? storedLayerSettings.customLayerId
+    : storedLayerSettings?.layerId;
+  const matchingLayerIndex = existingLayers.findIndex((layer) =>
+    layer.surfaceId === surfaceIdInput.value && layer.layerId === preferredLayerId,
+  );
+
+  if (matchingLayerIndex >= 0) {
+    existingLayerSelect.value = String(matchingLayerIndex);
+    applyExistingLayer();
+    return;
+  }
+
+  if (preferredLayerId) {
+    existingLayerSelect.value = newLayerSelectValue;
+  }
 }
 
 /**
@@ -677,6 +1099,10 @@ async function loadCharacterAssets() {
       renderLayerOptionsForSurface();
     }
 
+    await loadSavedAssetFiles();
+    restoreSavedAssetSelection();
+    restoreLayerSelection();
+    syncSelectedAssetImagesFromControls();
     renderOutputs();
     status.textContent = `${characterId} 캐릭터를 불러왔어요. Surface를 선택하세요.`;
   } catch (error) {
@@ -718,6 +1144,9 @@ async function loadCharacters() {
       : characters[0] ?? "";
 
     if (characterSelect.value) {
+      if (!storedLayerSettings?.basePath && !storedLayerSettings?.saveDirectory) {
+        syncAssetSavePathsFromKind();
+      }
       await loadCharacterAssets();
       return;
     }
@@ -869,6 +1298,7 @@ function createLayerSnippet() {
   const partPaths = getPartPaths();
   const layerId = getLayerId();
   const idleIntervalMs = Number(idleIntervalInput.value) || 0;
+  const shouldSaveIdleInterval = layerId !== "mouth" && idleIntervalMs > 0;
 
   return {
     surfaceId: surfaceIdInput.value.trim() || "0",
@@ -877,7 +1307,7 @@ function createLayerSnippet() {
       frames: partPaths,
       ...createLayerDepthPatch(layerId),
       intervalMs: Number(intervalInput.value) || 140,
-      ...(idleIntervalMs > 0 ? { idleIntervalMs } : {}),
+      ...(shouldSaveIdleInterval ? { idleIntervalMs } : {}),
       coversBase: coversBaseInput.checked,
       placement: readRegion(),
     },
@@ -999,10 +1429,27 @@ function renderSummary() {
 }
 
 /**
+ * Updates only the summary row that changes during frame playback.
+ */
+function renderCurrentFrameSummary() {
+  const descriptions = Array.from(layerSummary.querySelectorAll("dd"));
+  const frameDescription = descriptions[3];
+
+  if (!frameDescription) {
+    renderSummary();
+    return;
+  }
+
+  frameDescription.textContent = isPreviewingBaseFrame
+    ? baseImage?.fileName ?? "base"
+    : partImages[selectedFrameIndex]?.fileName ?? "선택 없음";
+}
+
+/**
  * Allows one overlay to preview as base -> overlay without changing saved frames.
  */
 function canPreviewBaseFrame() {
-  return Boolean(baseImage && coversBaseInput.checked && partImages.length > 0);
+  return Boolean(baseImage && partImages.length > 0);
 }
 
 /**
@@ -1053,12 +1500,11 @@ function stopPlayback() {
 }
 
 /**
- * Renders the selected frame on top of the base image using placement values.
+ * Keeps playback controls in sync without rebuilding the preview DOM.
  */
-function renderPreview() {
+function syncPlaybackControls() {
   const previewFrameCount = getPreviewFrameCount();
-  const selectedPart = isPreviewingBaseFrame ? null : partImages[selectedFrameIndex] ?? null;
-  layerPreview.replaceChildren();
+
   previousFrameButton.disabled = previewFrameCount <= 1;
   nextFrameButton.disabled = previewFrameCount <= 1;
   playFramesButton.disabled = previewFrameCount <= 1;
@@ -1066,6 +1512,45 @@ function renderPreview() {
   if (previewFrameCount <= 1) {
     stopPlayback();
   }
+}
+
+/**
+ * Updates the existing overlay image for frame playback.
+ */
+function updatePreviewFrame() {
+  const selectedPart = isPreviewingBaseFrame ? null : partImages[selectedFrameIndex] ?? null;
+  const overlay = layerPreview.querySelector<HTMLImageElement>(".asset-composite-overlay");
+
+  syncPlaybackControls();
+
+  if (!overlay) {
+    renderPreview();
+    return;
+  }
+
+  if (!selectedPart) {
+    overlay.hidden = true;
+    overlay.removeAttribute("src");
+  } else {
+    overlay.hidden = false;
+    if (overlay.getAttribute("src") !== selectedPart.previewUrl) {
+      overlay.src = selectedPart.previewUrl;
+    }
+    overlay.alt = selectedPart.fileName;
+  }
+
+  renderCurrentFrameSummary();
+  saveLayerSettings();
+}
+
+/**
+ * Renders the selected frame on top of the base image using placement values.
+ */
+function renderPreview() {
+  const previewFrameCount = getPreviewFrameCount();
+  const selectedPart = isPreviewingBaseFrame ? null : partImages[selectedFrameIndex] ?? null;
+  layerPreview.replaceChildren();
+  syncPlaybackControls();
 
   if (!baseImage && !selectedPart) {
     const empty = document.createElement("p");
@@ -1087,40 +1572,43 @@ function renderPreview() {
     stage.append(base);
   }
 
+  const overlay = document.createElement("img");
+  overlay.className = "asset-composite-overlay";
+  overlay.alt = selectedPart?.fileName ?? "";
+  overlay.hidden = !selectedPart;
   if (selectedPart) {
-    const overlay = document.createElement("img");
-    overlay.className = "asset-composite-overlay";
     overlay.src = selectedPart.previewUrl;
-    overlay.alt = selectedPart.fileName;
-    overlay.style.left = `${currentRegion.x}%`;
-    overlay.style.top = `${currentRegion.y}%`;
-    overlay.style.width = `${currentRegion.width}%`;
-    overlay.style.height = `${currentRegion.height}%`;
-    stage.append(overlay);
   }
+  overlay.style.left = `${currentRegion.x}%`;
+  overlay.style.top = `${currentRegion.y}%`;
+  overlay.style.width = `${currentRegion.width}%`;
+  overlay.style.height = `${currentRegion.height}%`;
+  stage.append(overlay);
 
-  const region = document.createElement("span");
-  region.className = "asset-composite-region";
-  region.title = "드래그해서 위치를 옮기고, 모서리를 드래그해서 크기를 조절하세요.";
-  region.style.left = `${currentRegion.x}%`;
-  region.style.top = `${currentRegion.y}%`;
-  region.style.width = `${currentRegion.width}%`;
-  region.style.height = `${currentRegion.height}%`;
-  region.addEventListener("pointerdown", (event) => {
-    startRegionDrag(event, stage, "move");
-  });
-  (["nw", "ne", "se", "sw"] as const).forEach((corner) => {
-    const handle = document.createElement("span");
-
-    handle.className = `asset-composite-region-handle asset-composite-region-handle-${corner}`;
-    handle.dataset.regionHandle = corner;
-    handle.addEventListener("pointerdown", (event) => {
-      event.stopPropagation();
-      startRegionDrag(event, stage, `resize-${corner}`);
+  if (regionOverlayVisibleInput.checked) {
+    const region = document.createElement("span");
+    region.className = "asset-composite-region";
+    region.title = "드래그해서 위치를 옮기고, 모서리를 드래그해서 크기를 조절하세요.";
+    region.style.left = `${currentRegion.x}%`;
+    region.style.top = `${currentRegion.y}%`;
+    region.style.width = `${currentRegion.width}%`;
+    region.style.height = `${currentRegion.height}%`;
+    region.addEventListener("pointerdown", (event) => {
+      startRegionDrag(event, stage, "move");
     });
-    region.append(handle);
-  });
-  stage.append(region);
+    (["nw", "ne", "se", "sw"] as const).forEach((corner) => {
+      const handle = document.createElement("span");
+
+      handle.className = `asset-composite-region-handle asset-composite-region-handle-${corner}`;
+      handle.dataset.regionHandle = corner;
+      handle.addEventListener("pointerdown", (event) => {
+        event.stopPropagation();
+        startRegionDrag(event, stage, `resize-${corner}`);
+      });
+      region.append(handle);
+    });
+    stage.append(region);
+  }
   layerPreview.append(stage);
 }
 
@@ -1128,6 +1616,10 @@ function renderPreview() {
  * Renders both layer and manifest JSON outputs.
  */
 function renderOutputs() {
+  if (getLayerId() === "mouth" && idleIntervalInput.value !== "0") {
+    idleIntervalInput.value = "0";
+  }
+
   renderLayerSelectionStep();
   renderCustomLayerField();
   selectedFrameIndex = Math.min(selectedFrameIndex, Math.max(0, partImages.length - 1));
@@ -1136,6 +1628,7 @@ function renderOutputs() {
   manifestOutput.textContent = JSON.stringify(createManifestSnippet(), null, 2);
   renderSummary();
   renderPreview();
+  renderFrameList();
   saveLayerSettings();
 }
 
@@ -1143,6 +1636,13 @@ function renderOutputs() {
  * Saves the layer and manifest snippets as project files.
  */
 async function saveLayerConfig() {
+  const validationMessage = validateLayerSaveTarget();
+
+  if (validationMessage) {
+    status.textContent = validationMessage;
+    return;
+  }
+
   const layerSnippet = createLayerSnippet();
   let savedResult: SaveResponse | null = null;
 
@@ -1246,12 +1746,12 @@ function moveFrame(offset: number) {
   if (previewFrameCount === 0) {
     selectedFrameIndex = 0;
     isPreviewingBaseFrame = false;
-    renderOutputs();
+    updatePreviewFrame();
     return;
   }
 
   setPreviewSlotIndex(getPreviewSlotIndex() + offset);
-  renderOutputs();
+  updatePreviewFrame();
 }
 
 /**
@@ -1280,6 +1780,10 @@ function togglePlayback() {
  */
 function init() {
   loadLayerSettings();
+  regionOverlayVisibleInput.checked = loadRegionOverlayVisible();
+  if (!storedLayerSettings) {
+    syncAssetSavePathsFromKind();
+  }
   renderRegionControls();
   renderOutputs();
 
@@ -1296,14 +1800,25 @@ function init() {
   });
   partImagesInput.addEventListener("change", async () => {
     const files = Array.from(partImagesInput.files ?? []);
-    partImages = await Promise.all(files.map(readImageFile));
-    selectedFrameIndex = 0;
-    isPreviewingBaseFrame = false;
+    appendPartFrames(await Promise.all(files.map(readImageFile)));
+    partImagesInput.value = "";
     renderOutputs();
   });
+  partAssetSelect.addEventListener("change", applySavedPartAssets);
+  addPartAssetFramesButton.addEventListener("click", appendSelectedPartAssetFrames);
+  frameListSelect.addEventListener("change", selectFrameFromList);
+  moveFrameUpButton.addEventListener("click", () => moveSelectedFrame(-1));
+  moveFrameDownButton.addEventListener("click", () => moveSelectedFrame(1));
+  removeFrameButton.addEventListener("click", removeSelectedFrame);
+  clearFramesButton.addEventListener("click", clearFrames);
   baseImageInput.addEventListener("change", async () => {
     const file = baseImageInput.files?.[0];
     baseImage = file ? await readImageFile(file) : null;
+    renderOutputs();
+  });
+  baseAssetSelect.addEventListener("change", applySavedBaseAsset);
+  assetSaveKindSelect.addEventListener("change", () => {
+    syncAssetSavePathsFromKind();
     renderOutputs();
   });
   [
@@ -1321,6 +1836,7 @@ function init() {
     input.addEventListener("change", renderOutputs);
   });
   characterSelect.addEventListener("change", () => {
+    syncAssetSavePathsFromKind();
     void loadCharacterAssets();
   });
   surfaceSelect.addEventListener("change", handleSurfaceSelectionChange);
@@ -1350,6 +1866,10 @@ function init() {
   previousFrameButton.addEventListener("click", () => moveFrame(-1));
   nextFrameButton.addEventListener("click", () => moveFrame(1));
   playFramesButton.addEventListener("click", togglePlayback);
+  regionOverlayVisibleInput.addEventListener("change", () => {
+    saveRegionOverlayVisible(regionOverlayVisibleInput.checked);
+    renderOutputs();
+  });
   void loadCharacters();
 }
 

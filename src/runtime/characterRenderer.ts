@@ -87,6 +87,10 @@ function shouldKeepLayerVisibleWhenInactive(layer: CharacterLayer) {
   return Boolean(!isFullCoverLayer(layer) && !layer.idleIntervalMs);
 }
 
+function canRunIdleLayer(layerId: CharacterLayerId, layer: CharacterLayer) {
+  return layerId !== "mouth" && (layer.idleIntervalMs ?? 0) > 0;
+}
+
 function resetLayerPlacement(layerElement: HTMLImageElement) {
   layerElement.style.removeProperty("left");
   layerElement.style.removeProperty("top");
@@ -144,14 +148,16 @@ export function createCharacterRenderer({ elements, character }: CharacterRender
     return layerImage;
   }
 
-  function findSurfaceForExpression(expression: CharacterExpression) {
+  function findSurfaceForExpression(expression: CharacterExpression, baseImage: string | null) {
     const surfaces = character.assets?.surfaces;
 
     if (!surfaces) {
       return null;
     }
 
-    return Object.values(surfaces).find((surface) => surface.expression === expression) ?? null;
+    return Object.values(surfaces).find((surface) =>
+      surface.expression === expression && (!baseImage || getSurfaceBaseImage(surface) === baseImage),
+    ) ?? null;
   }
 
   function clearPartLayers() {
@@ -339,9 +345,7 @@ export function createCharacterRenderer({ elements, character }: CharacterRender
 
     getRenderableLayerIds(surface).forEach((layerId) => {
       const layer = getSurfaceLayer(surface, layerId);
-      const idleIntervalMs = layer?.idleIntervalMs ?? 0;
-
-      if (!layer || idleIntervalMs <= 0) {
+      if (!layer || !canRunIdleLayer(layerId, layer)) {
         return;
       }
 
@@ -357,7 +361,7 @@ export function createCharacterRenderer({ elements, character }: CharacterRender
         window.setTimeout(() => {
           setLayerAnimationActive(layerId, false);
         }, playbackMs);
-      }, idleIntervalMs);
+      }, layer.idleIntervalMs ?? 0);
 
       idleLayerAnimations.set(layerId, timerId);
     });
@@ -369,7 +373,10 @@ export function createCharacterRenderer({ elements, character }: CharacterRender
     elements.sprite.dataset.expression = state.expression;
     elements.spriteImage.alt = character.assets?.alt ?? character.profile.name;
 
-    const surface = findSurfaceForExpression(state.expression);
+    const expressionAsset = character.assets
+      ? pickExpressionAsset(character.assets.expressions[state.expression], elements.spriteImage.getAttribute("src"))
+      : null;
+    const surface = findSurfaceForExpression(state.expression, expressionAsset);
 
     if (surface) {
       applySurfaceDefinition(surface);
@@ -378,10 +385,6 @@ export function createCharacterRenderer({ elements, character }: CharacterRender
       currentSurface = null;
       delete elements.sprite.dataset.surfaceId;
       clearPartLayers();
-
-      const expressionAsset = character.assets
-        ? pickExpressionAsset(character.assets.expressions[state.expression], elements.spriteImage.getAttribute("src"))
-        : null;
 
       if (expressionAsset && elements.spriteImage.getAttribute("src") !== expressionAsset) {
         elements.spriteImage.src = expressionAsset;
@@ -398,7 +401,7 @@ export function createCharacterRenderer({ elements, character }: CharacterRender
     delete elements.sprite.dataset.touchedPart;
   }
 
-  function applySurface(surfaceId: string) {
+  function applySurface(surfaceId: string, options: { startIdleLayers?: boolean } = {}) {
     const surface = character.assets?.surfaces?.[surfaceId];
 
     if (!surface) {
@@ -409,7 +412,9 @@ export function createCharacterRenderer({ elements, character }: CharacterRender
     stopLayerAnimations();
     stopIdleLayerAnimations();
     applySurfaceDefinition(surface);
-    startIdleLayerAnimations(surface);
+    if (options.startIdleLayers ?? true) {
+      startIdleLayerAnimations(surface);
+    }
   }
 
   function setMode(mode: CharacterRuntimeMode) {

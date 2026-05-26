@@ -1202,7 +1202,7 @@ async function createOverlayPartImageDataUrl(
     const edgeAlphaScale = Math.max(0, Math.min(1, distanceToEdge / featherSize));
     const currentAlpha = imageData.data[pixelIndex + 3] ?? 0;
 
-    imageData.data[pixelIndex + 3] = Math.round(currentAlpha * Math.max(0.72, edgeAlphaScale));
+    imageData.data[pixelIndex + 3] = Math.round(currentAlpha * edgeAlphaScale);
   }
 
   context.putImageData(imageData, 0, 0);

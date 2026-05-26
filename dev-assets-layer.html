@@ -10,22 +10,24 @@
     <main class="asset-lab-shell">
       <header class="asset-lab-header">
         <div>
-          <p class="eyebrow">GhostNest Asset Tools</p>
-          <h1>레이어 설정</h1>
+          <p class="eyebrow">Character Settings Plugin</p>
+          <h1>Layer 만들기</h1>
         </div>
-        <a class="asset-lab-back" href="./dev-assets.html">도구 홈</a>
+        <a class="asset-lab-back" href="./dev-character.html">캐릭터 설정</a>
       </header>
 
-      <nav class="asset-tool-nav" aria-label="Asset tool pages">
-        <a href="./dev-assets-crop.html">Crop 도구</a>
-        <a href="./dev-assets-comfy.html">Comfy 생성</a>
-        <a aria-current="page" href="./dev-assets-layer.html">레이어 설정</a>
+      <nav class="asset-tool-nav" aria-label="Character setting pages">
+        <a href="./dev-character.html">설정 홈</a>
+        <a href="./dev-assets-crop.html">Crop</a>
+        <a aria-current="page" href="./dev-assets-layer.html">Layer 만들기</a>
+        <a href="./dev-character-composition.html">Set 조합하기</a>
       </nav>
 
       <section class="asset-lab-grid" aria-label="Layer config tool">
         <section class="asset-lab-panel">
           <div class="asset-lab-section">
-            <h2>레이어 입력</h2>
+            <h2>레이어 재료</h2>
+            <p class="asset-lab-help">이미 Expression과 base 이미지가 연결된 Set을 고른 뒤, 그 Set 위에 올라갈 파츠 Layer를 만듭니다.</p>
             <div class="asset-lab-field-grid">
               <label>
                 캐릭터
@@ -35,28 +37,28 @@
                 <input id="characterIdInput" type="hidden" value="rine" autocomplete="off" />
               </label>
               <label id="surfaceSelectField" hidden>
-                Surface
+                저장할 Set
                 <select id="surfaceSelect">
                   <option value="">캐릭터를 먼저 선택하세요.</option>
                 </select>
               </label>
               <label id="surfaceIdField" hidden>
-                새 Surface ID
+                새 Set ID
                 <input id="surfaceIdInput" type="text" value="0" autocomplete="off" />
               </label>
             </div>
             <label id="layerSelectField" hidden>
               Layer
               <select id="existingLayerSelect">
-                <option value="">Surface를 먼저 선택하세요.</option>
+                <option value="">Set을 먼저 선택하세요.</option>
               </select>
             </label>
             <label id="partRecipeField" hidden>
               파츠 종류
               <select id="partRecipeSelect">
-                <option value="eyeBlink">눈 깜빡임: 감은 눈</option>
-                <option value="mouthShapes">입 모양</option>
-                <option value="expressionSet">표정 세트</option>
+                <option value="eyeBlink">눈 깜빡임</option>
+                <option value="mouthShapes">입모양</option>
+                <option value="expressionSet">표정 파츠</option>
               </select>
             </label>
             <div class="asset-lab-field-grid" id="layerConfigFields" hidden>
@@ -87,47 +89,74 @@
               <input id="coversBaseInput" type="checkbox" checked />
               <span>
                 base를 덮는 레이어
-                <small>현재 런타임은 placement를 직접 사용하지 않으므로 전체 크기 투명 PNG일 때 가장 안전해요.</small>
+                <small>전체 크기 투명 PNG는 coversBase를 켜고, 부분 PNG는 placement를 조정하세요.</small>
               </span>
             </label>
           </div>
           <div class="asset-lab-section" id="layerStorageSection" hidden>
             <h2>저장 설정</h2>
+            <p class="asset-lab-help">Layer 이미지를 base/parts 폴더에 저장하고, 선택한 Set의 layers 항목에 연결합니다.</p>
+            <label>
+              저장 폴더
+              <select id="assetSaveKindSelect">
+                <option value="parts">parts - 파츠 이미지</option>
+                <option value="base">base - 기본 이미지</option>
+              </select>
+            </label>
             <label>
               에셋 기준 경로
-              <input id="basePathInput" type="text" value="./src/characters/rine/generated/" autocomplete="off" />
+              <input id="basePathInput" type="text" value="./src/characters/rine/assets/parts/" autocomplete="off" />
             </label>
             <label>
               프로젝트 저장 경로
-              <input id="saveDirectoryInput" type="text" value="src/characters/rine/generated" autocomplete="off" />
+              <input id="saveDirectoryInput" type="text" value="src/characters/rine/assets/parts" autocomplete="off" />
             </label>
             <div class="asset-lab-actions">
-              <button type="button" id="saveLayerConfigButton">설정 저장</button>
+              <button type="button" id="saveLayerConfigButton">Layer 저장</button>
               <button type="button" id="deleteLayerConfigButton" disabled>Layer 삭제</button>
               <button type="button" id="copyManifestButton">Manifest 복사</button>
               <button type="button" id="copyLayerButton">Layer 복사</button>
             </div>
-            <p class="asset-lab-status" id="layerStatus" role="status">레이어 설정을 만들 준비가 됐어요.</p>
+            <p class="asset-lab-status" id="layerStatus" role="status">레이어 재료를 만들 준비가 됐어요.</p>
           </div>
         </section>
 
         <section class="asset-lab-panel asset-lab-output-panel" id="layerPreviewSection" hidden>
           <div class="asset-lab-output-header">
             <h2>레이어 미리보기</h2>
-            <div class="asset-lab-actions">
-              <button type="button" id="previousFrameButton">이전</button>
-              <button type="button" id="playFramesButton">재생</button>
-              <button type="button" id="nextFrameButton">다음</button>
-            </div>
           </div>
+          <p class="asset-lab-help">선택한 Set의 base 이미지 위에 현재 Layer 파츠가 어떤 위치와 크기로 붙는지 확인합니다.</p>
           <div class="asset-layer-preview-inputs">
             <label>
               기준 이미지
               <input id="baseImageInput" type="file" accept="image/*" />
             </label>
             <label>
+              저장된 기본 이미지
+              <select id="baseAssetSelect">
+                <option value="">저장된 에셋을 불러오는 중이에요.</option>
+              </select>
+            </label>
+            <label>
               생성된 파츠 이미지
               <input id="partImagesInput" type="file" accept="image/*" multiple />
+            </label>
+            <label>
+              저장된 파츠 이미지
+              <select id="partAssetSelect" multiple size="5">
+                <option value="">저장된 에셋을 불러오는 중이에요.</option>
+              </select>
+            </label>
+            <div class="asset-lab-actions asset-frame-actions">
+              <button type="button" id="addPartAssetFramesButton">선택 파츠 프레임 추가</button>
+              <button type="button" id="moveFrameUpButton">위로</button>
+              <button type="button" id="moveFrameDownButton">아래로</button>
+              <button type="button" id="removeFrameButton">프레임 삭제</button>
+              <button type="button" id="clearFramesButton">프레임 초기화</button>
+            </div>
+            <label>
+              프레임 목록
+              <select id="frameListSelect" size="6"></select>
             </label>
             <div class="asset-lab-region-grid">
               <label>X <input id="targetRegionXInput" type="number" min="0" max="100" step="1" /></label>
@@ -135,16 +164,25 @@
               <label>W <input id="targetRegionWidthInput" type="number" min="1" max="100" step="1" /></label>
               <label>H <input id="targetRegionHeightInput" type="number" min="1" max="100" step="1" /></label>
             </div>
+            <label class="asset-lab-checkbox asset-region-overlay-toggle">
+              <input id="regionOverlayVisibleInput" type="checkbox" checked />
+              <span>영역 테두리 표시</span>
+            </label>
           </div>
           <div class="asset-layer-preview-layout">
             <div class="asset-composite-preview" id="layerPreview" aria-live="polite"></div>
             <aside class="asset-layer-summary" aria-label="현재 레이어 설정">
               <h2>현재 설정</h2>
+              <div class="asset-layer-playback-controls">
+                <button type="button" id="previousFrameButton">이전</button>
+                <button type="button" id="playFramesButton">재생</button>
+                <button type="button" id="nextFrameButton">다음</button>
+              </div>
               <dl id="layerSummary"></dl>
             </aside>
           </div>
           <p class="asset-lab-note">
-            crop 파츠는 placement 기준으로 미리 보여줘요. 실제 런타임 반영은 renderer가 placement를 지원해야 정확히 맞습니다.
+            Crop에서 잡은 placement 기준으로 실제 배치를 미리 확인합니다.
           </p>
         </section>
 

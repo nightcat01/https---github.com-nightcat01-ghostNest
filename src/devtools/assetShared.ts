@@ -13,6 +13,7 @@ export type PartRecipe = {
 };
 
 export const targetRegionStorageKey = "ghost-nest.asset-generator.target-region.v1";
+export const regionOverlayVisibleStorageKey = "ghost-nest.asset-region-overlay-visible.v1";
 
 export const recipes: Record<PartRecipeId, PartRecipe> = {
   eyeBlink: {
@@ -96,6 +97,20 @@ export function loadStoredRegion(fallback: TargetRegion): TargetRegion {
  */
 export function saveStoredRegion(region: TargetRegion) {
   window.localStorage.setItem(targetRegionStorageKey, JSON.stringify(clampRegion(region)));
+}
+
+/**
+ * Loads whether the visual placement/crop outline should be shown.
+ */
+export function loadRegionOverlayVisible() {
+  return window.localStorage.getItem(regionOverlayVisibleStorageKey) !== "false";
+}
+
+/**
+ * Saves whether the visual placement/crop outline should be shown.
+ */
+export function saveRegionOverlayVisible(visible: boolean) {
+  window.localStorage.setItem(regionOverlayVisibleStorageKey, visible ? "true" : "false");
 }
 
 /**

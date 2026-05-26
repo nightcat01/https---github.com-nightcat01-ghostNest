@@ -1,6 +1,9 @@
 {
   "extensions": {
-    "asset-generator": {
+    "character-settings": {
+      "enabled": true
+    },
+    "comfy-asset-generator": {
       "enabled": true,
       "devServer": {
         "bridge": false,

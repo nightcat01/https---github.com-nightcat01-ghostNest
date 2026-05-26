@@ -1,9 +1,15 @@
 import type { CharacterDefinition, CharacterLayerId, CharacterSurface, ManagementMenuItem } from "../../core/types.js";
 
+/**
+ * Creates a compact label for one registered surface.
+ */
 function getSurfaceLabel(surface: CharacterSurface) {
   return `${surface.expression ?? "surface"} ${surface.id}`;
 }
 
+/**
+ * Counts image frames available on one layer.
+ */
 function getLayerFrameCount(layer: NonNullable<CharacterSurface["layers"]>[CharacterLayerId]) {
   if (!layer) {
     return 0;
@@ -12,6 +18,9 @@ function getLayerFrameCount(layer: NonNullable<CharacterSurface["layers"]>[Chara
   return Math.max(layer.frames?.length ?? 0, layer.image ? 1 : 0);
 }
 
+/**
+ * Estimates a test playback duration from layer timing.
+ */
 function getLayerTestDurationMs(layer: NonNullable<CharacterSurface["layers"]>[CharacterLayerId]) {
   if (!layer) {
     return 0;
@@ -20,9 +29,11 @@ function getLayerTestDurationMs(layer: NonNullable<CharacterSurface["layers"]>[C
   return Math.max(layer.intervalMs ?? 140, 40) * Math.max(getLayerFrameCount(layer), 1);
 }
 
+/**
+ * Builds expression test menu entries from assets.expressions.
+ */
 function createExpressionAssetItems(character: CharacterDefinition): ManagementMenuItem {
   const expressions = Object.entries(character.assets?.expressions ?? {});
-  const surfaces = Object.values(character.assets?.surfaces ?? {});
 
   if (expressions.length === 0) {
     return {
@@ -44,19 +55,16 @@ function createExpressionAssetItems(character: CharacterDefinition): ManagementM
       label: expression,
       description: Array.isArray(asset) ? `${asset.length}개 이미지 후보` : asset,
       actions: [
-        ...(() => {
-          const surface = surfaces.find((item) => item.expression === expression);
-
-          return surface
-            ? [{ type: "surface" as const, id: surface.id }]
-            : [{ type: "change_expression" as const, expression, clearTouchedPart: true }];
-        })(),
+        { type: "change_expression" as const, expression, clearTouchedPart: true },
         { type: "log", label: `management.asset_test.expression.${expression}` },
       ],
     })),
   };
 }
 
+/**
+ * Builds layer test entries under one surface.
+ */
 function createLayerAssetItems(surface: CharacterSurface): ManagementMenuItem[] {
   return Object.entries(surface.layers ?? {}).map(([layerId, layer]) => {
     const frameCount = getLayerFrameCount(layer);
@@ -69,7 +77,7 @@ function createLayerAssetItems(surface: CharacterSurface): ManagementMenuItem[] 
         ? `placement x ${layer.placement.x}%, y ${layer.placement.y}%, w ${layer.placement.width}%, h ${layer.placement.height}%`
         : "전체 이미지 레이어",
       actions: [
-        { type: "surface", id: surface.id },
+        { type: "surface", id: surface.id, startIdleLayers: false },
         ...(layerId === "base"
           ? []
           : [{
@@ -83,6 +91,9 @@ function createLayerAssetItems(surface: CharacterSurface): ManagementMenuItem[] 
   });
 }
 
+/**
+ * Builds surface and layer test menu entries.
+ */
 function createSurfaceAssetItems(character: CharacterDefinition): ManagementMenuItem {
   const surfaces = Object.values(character.assets?.surfaces ?? {});
 
@@ -100,7 +111,7 @@ function createSurfaceAssetItems(character: CharacterDefinition): ManagementMenu
   return {
     id: "asset-test-surfaces",
     label: "Surfaces / Layers",
-    description: "캐릭터 assets.surfaces와 내부 layers를 직접 확인해요.",
+    description: "캐릭터 assets.surfaces와 그 안의 layers를 직접 확인해요.",
     children: surfaces.map((surface) => {
       const layerItems = createLayerAssetItems(surface);
 
@@ -125,6 +136,9 @@ function createSurfaceAssetItems(character: CharacterDefinition): ManagementMenu
   };
 }
 
+/**
+ * Builds the top-level asset test menu item.
+ */
 function createAssetTestMenuItem(character: CharacterDefinition | undefined): ManagementMenuItem {
   if (!character?.assets) {
     return {

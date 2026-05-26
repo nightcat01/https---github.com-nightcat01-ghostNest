@@ -10,16 +10,16 @@
     <main class="asset-lab-shell">
       <header class="asset-lab-header">
         <div>
-          <p class="eyebrow">GhostNest Asset Tools</p>
-          <h1>Crop 도구</h1>
+          <p class="eyebrow">GhostNest Character Settings</p>
+          <h1>Crop</h1>
         </div>
-        <a class="asset-lab-back" href="./dev-assets.html">도구 홈</a>
+        <a class="asset-lab-back" href="./dev-character.html">캐릭터 설정</a>
       </header>
 
-      <nav class="asset-tool-nav" aria-label="Asset tool pages">
-        <a aria-current="page" href="./dev-assets-crop.html">Crop 도구</a>
-        <a href="./dev-assets-comfy.html">Comfy 생성</a>
-        <a href="./dev-assets-layer.html">레이어 설정</a>
+      <nav class="asset-tool-nav" aria-label="Character setting pages">
+        <a href="./dev-character.html">설정 홈</a>
+        <a aria-current="page" href="./dev-assets-crop.html">Crop</a>
+        <a href="./dev-assets-layer.html">Layer 설정</a>
       </nav>
 
       <section class="asset-lab-grid" aria-label="Crop tool">
@@ -27,11 +27,11 @@
           <div class="asset-lab-section">
             <h2>이미지와 영역</h2>
             <label>
-              생성할 파츠
+              파츠 종류
               <select id="partRecipeSelect" name="partRecipe">
-                <option value="eyeBlink">눈 깜빡임: 감은 눈</option>
-                <option value="mouthShapes">입 모양: 닫힘, 작게 열림, 열림</option>
-                <option value="expressionSet">표정 세트: 기쁨, 생각, 놀람</option>
+                <option value="eyeBlink">눈 깜빡임</option>
+                <option value="mouthShapes">입모양</option>
+                <option value="expressionSet">표정 세트</option>
               </select>
             </label>
             <label>
@@ -44,6 +44,10 @@
               <label>W <input id="targetRegionWidthInput" type="number" min="1" max="100" step="1" /></label>
               <label>H <input id="targetRegionHeightInput" type="number" min="1" max="100" step="1" /></label>
             </div>
+            <label class="asset-lab-checkbox">
+              <input id="regionOverlayVisibleInput" type="checkbox" checked />
+              <span>영역 테두리 표시</span>
+            </label>
             <div class="asset-lab-actions">
               <button type="button" id="downloadCropButton">Crop 다운로드</button>
             </div>

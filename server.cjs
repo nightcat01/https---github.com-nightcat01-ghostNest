@@ -17,30 +17,38 @@ function readExtensionConfig() {
   }
 }
 
-function getAssetGeneratorConfig() {
-  return readExtensionConfig().extensions?.["asset-generator"] ?? { enabled: false };
+function getExtensionConfig(extensionId) {
+  return readExtensionConfig().extensions?.[extensionId] ?? { enabled: false };
 }
 
-function isAssetGeneratorEnabled() {
-  return Boolean(getAssetGeneratorConfig().enabled);
+function getCharacterSettingsConfig() {
+  return getExtensionConfig("character-settings");
 }
 
-function isAssetGeneratorBridgeEnabled() {
-  const config = getAssetGeneratorConfig();
+function getComfyAssetGeneratorConfig() {
+  return getExtensionConfig("comfy-asset-generator");
+}
+
+function isCharacterSettingsEnabled() {
+  return Boolean(getCharacterSettingsConfig().enabled);
+}
+
+function isComfyAssetGeneratorBridgeEnabled() {
+  const config = getComfyAssetGeneratorConfig();
 
   return Boolean(config.enabled && config.devServer?.bridge);
 }
 
-function sendAssetGeneratorBridgeDisabled(response) {
+function sendComfyAssetGeneratorBridgeDisabled(response) {
   sendJson(response, 403, {
     ok: false,
-    error: "asset_generator_bridge_disabled",
-    message: "Asset Generator devServer.bridge is disabled in ghost-nest.extensions.json. Turn it on to save files or use ComfyUI bridge actions.",
+    error: "comfy_asset_generator_bridge_disabled",
+    message: "Comfy Asset Generator devServer.bridge is disabled in ghost-nest.extensions.json. Turn it on to use ComfyUI bridge actions.",
   });
 }
 
 function getComfyUiUrl() {
-  const config = getAssetGeneratorConfig();
+  const config = getComfyAssetGeneratorConfig();
 
   return process.env.COMFYUI_URL
     ?? config.devServer?.comfyUiUrl
@@ -48,7 +56,7 @@ function getComfyUiUrl() {
 }
 
 function getConfiguredWorkflowPath() {
-  const config = getAssetGeneratorConfig();
+  const config = getComfyAssetGeneratorConfig();
 
   return process.env.COMFYUI_WORKFLOW_PATH ?? config.devServer?.workflowPath ?? "src/devtools/layer-part-workflow.api.json";
 }
@@ -155,8 +163,13 @@ function createWorkflowPathInfo(body) {
 const mimeTypes = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
+  ".gif": "image/gif",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
   ".js": "text/javascript; charset=utf-8",
   ".map": "application/json; charset=utf-8",
+  ".png": "image/png",
+  ".webp": "image/webp",
 };
 
 function resolveRequestPath(url) {
@@ -255,7 +268,7 @@ async function readCharacterAssets(characterId) {
 
   return {
     characterId: safeCharacterId,
-    assets: character.assets,
+    assets: normalizeCharacterAssets(safeCharacterId, character.assets),
   };
 }
 
@@ -401,6 +414,65 @@ function findObjectPropertyBlock(source, containerStart, containerEnd, propertyN
   return null;
 }
 
+function findPropertyValueRange(source, containerStart, containerEnd, propertyName) {
+  const escapedName = propertyName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const patterns = [
+    new RegExp(`(^|[\\s,])${escapedName}\\s*:`, "m"),
+    new RegExp(`(^|[\\s,])["']${escapedName}["']\\s*:`, "m"),
+  ];
+  const container = source.slice(containerStart, containerEnd);
+
+  for (const pattern of patterns) {
+    const match = pattern.exec(container);
+
+    if (!match?.index && match?.index !== 0) {
+      continue;
+    }
+
+    const propertyStart = containerStart + match.index + (match[1]?.length ?? 0);
+    let valueStart = containerStart + match.index + match[0].length;
+
+    while (source[valueStart] === " " || source[valueStart] === "\t") {
+      valueStart += 1;
+    }
+
+    let valueEnd = valueStart;
+    const quote = source[valueStart] === "\"" || source[valueStart] === "'" || source[valueStart] === "`"
+      ? source[valueStart]
+      : null;
+
+    if (quote) {
+      valueEnd += 1;
+
+      while (valueEnd < containerEnd) {
+        if (source[valueEnd] === "\\" && valueEnd + 1 < containerEnd) {
+          valueEnd += 2;
+          continue;
+        }
+
+        if (source[valueEnd] === quote) {
+          valueEnd += 1;
+          break;
+        }
+
+        valueEnd += 1;
+      }
+    } else {
+      while (valueEnd < containerEnd && ![",", "\n", "\r", "}"].includes(source[valueEnd])) {
+        valueEnd += 1;
+      }
+    }
+
+    return {
+      propertyStart,
+      valueStart,
+      valueEnd,
+    };
+  }
+
+  return null;
+}
+
 function formatObjectLiteral(value, indent = 12) {
   const indentation = " ".repeat(indent);
   const rawJson = JSON.stringify(value, null, 2);
@@ -409,6 +481,10 @@ function formatObjectLiteral(value, indent = 12) {
     .split("\n")
     .map((line, index) => (index === 0 ? line : `${indentation}${line}`))
     .join("\n");
+}
+
+function formatAssetsLiteral(assets) {
+  return formatObjectLiteral(assets, 6);
 }
 
 function insertPropertyBeforeClose(source, blockEnd, text) {
@@ -445,6 +521,252 @@ function removeObjectProperty(source, propertyStart, propertyEnd) {
   }
 
   return `${source.slice(0, lineStart)}${source.slice(removeEnd)}`;
+}
+
+function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function normalizeCharacterAssetPath(characterId, assetPath) {
+  if (typeof assetPath !== "string") {
+    return assetPath;
+  }
+
+  const characterPrefix = `./src/characters/${characterId}/`;
+  const normalizedPath = assetPath.replaceAll("\\", "/");
+
+  if (!normalizedPath.startsWith(characterPrefix) || normalizedPath.startsWith(`${characterPrefix}assets/`)) {
+    return assetPath;
+  }
+
+  const fileName = path.posix.basename(normalizedPath);
+  const baseAssetPath = `./src/characters/${characterId}/assets/base/${fileName}`;
+  const partAssetPath = `./src/characters/${characterId}/assets/parts/${fileName}`;
+
+  if (fs.existsSync(path.resolve(root, baseAssetPath.slice(2)))) {
+    return baseAssetPath;
+  }
+
+  if (fs.existsSync(path.resolve(root, partAssetPath.slice(2)))) {
+    return partAssetPath;
+  }
+
+  return assetPath;
+}
+
+function normalizeCharacterAssetValue(characterId, value) {
+  if (typeof value === "string") {
+    return normalizeCharacterAssetPath(characterId, value);
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeCharacterAssetValue(characterId, item));
+  }
+
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, normalizeCharacterAssetValue(characterId, item)]),
+    );
+  }
+
+  return value;
+}
+
+function normalizeCharacterAssets(characterId, assets) {
+  return normalizeCharacterAssetValue(characterId, assets);
+}
+
+function replaceCharacterAssetsSource(source, assets) {
+  const rootObjectStart = source.indexOf("assets:");
+
+  if (rootObjectStart === -1) {
+    throw new Error("character_assets_not_found");
+  }
+
+  const assetsBlock = findPropertyBlock(source, rootObjectStart, source.length, "assets");
+
+  if (!assetsBlock) {
+    throw new Error("character_assets_not_found");
+  }
+
+  const propertyStart = source.lastIndexOf("assets", assetsBlock.start);
+  const replacement = `assets: ${formatAssetsLiteral(assets)}`;
+
+  return `${source.slice(0, propertyStart)}${replacement}${source.slice(assetsBlock.end + 1)}`;
+}
+
+async function readEditableCharacterAssets(characterId) {
+  const { assets } = await readCharacterAssets(characterId);
+
+  return cloneJson(assets);
+}
+
+function upsertSurfaceInAssets(assets, surfaceId, surface) {
+  const surfaces = assets.surfaces ?? {};
+  const existingSurface = surfaces[surfaceId] ?? {};
+
+  return {
+    ...assets,
+    surfaces: {
+      ...surfaces,
+      [surfaceId]: {
+        ...existingSurface,
+        id: surfaceId,
+        ...surface,
+      },
+    },
+  };
+}
+
+function upsertLayerInAssets(assets, surfaceId, layerId, layer) {
+  const surfaces = assets.surfaces ?? {};
+  const existingSurface = surfaces[surfaceId] ?? { id: surfaceId };
+  const layers = existingSurface.layers ?? {};
+
+  return {
+    ...assets,
+    surfaces: {
+      ...surfaces,
+      [surfaceId]: {
+        ...existingSurface,
+        id: surfaceId,
+        layers: {
+          ...layers,
+          [layerId]: layer,
+        },
+      },
+    },
+  };
+}
+
+function deleteLayerInAssets(assets, surfaceId, layerId) {
+  const surfaces = assets.surfaces ?? {};
+  const existingSurface = surfaces[surfaceId];
+
+  if (!existingSurface) {
+    throw new Error("character_surface_not_found");
+  }
+
+  const layers = existingSurface.layers ?? {};
+
+  if (!layers[layerId]) {
+    throw new Error("character_layer_not_found");
+  }
+
+  const nextLayers = { ...layers };
+  delete nextLayers[layerId];
+
+  return {
+    ...assets,
+    surfaces: {
+      ...surfaces,
+      [surfaceId]: {
+        ...existingSurface,
+        layers: nextLayers,
+      },
+    },
+  };
+}
+
+function upsertExpressionInAssets(assets, expression, asset) {
+  const expressions = assets.expressions ?? {};
+
+  return {
+    ...assets,
+    expressions: {
+      ...expressions,
+      [expression]: asset,
+    },
+  };
+}
+
+async function saveCharacterAssets(body, mergeAssets) {
+  const { safeCharacterId, characterSourcePath } = resolveCharacterSourcePath(body.characterId);
+  const characterBuildPath = resolveCharacterBuildPath(safeCharacterId);
+  const currentAssets = normalizeCharacterAssets(safeCharacterId, await readEditableCharacterAssets(safeCharacterId));
+  const nextAssets = normalizeCharacterAssets(safeCharacterId, mergeAssets(currentAssets));
+  const source = await fs.promises.readFile(characterSourcePath, "utf8");
+  const updatedSource = replaceCharacterAssetsSource(source, nextAssets);
+
+  await fs.promises.writeFile(characterSourcePath, updatedSource, "utf8");
+
+  if (characterBuildPath) {
+    const buildSource = await fs.promises.readFile(characterBuildPath, "utf8");
+    const updatedBuildSource = replaceCharacterAssetsSource(buildSource, nextAssets);
+
+    await fs.promises.writeFile(characterBuildPath, updatedBuildSource, "utf8");
+  }
+
+  return {
+    characterId: safeCharacterId,
+    path: path.relative(root, characterSourcePath).replaceAll(path.sep, "/"),
+    buildPath: characterBuildPath ? path.relative(root, characterBuildPath).replaceAll(path.sep, "/") : null,
+  };
+}
+
+function upsertCharacterSurfaceProperty(source, surfaceBlock, propertyName, value) {
+  const existingProperty = findPropertyValueRange(source, surfaceBlock.start, surfaceBlock.end, propertyName);
+  const propertyText = `${propertyName}: ${JSON.stringify(value)}`;
+
+  if (existingProperty) {
+    return `${source.slice(0, existingProperty.propertyStart)}${propertyText}${source.slice(existingProperty.valueEnd)}`;
+  }
+
+  return insertPropertyBeforeClose(source, surfaceBlock.end, `        ${propertyText},`);
+}
+
+function upsertCharacterSurfaceSource(source, { surfaceId, surface }) {
+  const rootObjectStart = source.indexOf("assets:");
+
+  if (rootObjectStart === -1) {
+    throw new Error("character_assets_not_found");
+  }
+
+  const assetsBlock = findPropertyBlock(source, rootObjectStart, source.length, "assets");
+
+  if (!assetsBlock) {
+    throw new Error("character_assets_not_found");
+  }
+
+  const surfacesBlock = findPropertyBlock(source, assetsBlock.start, assetsBlock.end, "surfaces");
+
+  if (!surfacesBlock) {
+    throw new Error("character_surfaces_not_found");
+  }
+
+  const surfacePayload = {
+    id: surfaceId,
+    ...(surface.image ? { image: surface.image } : {}),
+    ...(surface.expression ? { expression: surface.expression } : {}),
+    ...(surface.alt ? { alt: surface.alt } : {}),
+  };
+  const surfaceBlock = findObjectPropertyBlock(source, surfacesBlock.start, surfacesBlock.end, surfaceId);
+
+  if (!surfaceBlock) {
+    const surfaceLiteral = formatObjectLiteral(surfacePayload, 6);
+    const surfaceProperty = `      ${JSON.stringify(surfaceId)}: ${surfaceLiteral},`;
+
+    return insertPropertyBeforeClose(source, surfacesBlock.end, surfaceProperty);
+  }
+
+  return Object.entries(surfacePayload).reduce(
+    (updatedSource, [propertyName, value]) => {
+      const updatedAssetsBlock = findPropertyBlock(updatedSource, rootObjectStart, updatedSource.length, "assets");
+      const updatedSurfacesBlock = updatedAssetsBlock
+        ? findPropertyBlock(updatedSource, updatedAssetsBlock.start, updatedAssetsBlock.end, "surfaces")
+        : null;
+      const updatedSurfaceBlock = updatedSurfacesBlock
+        ? findObjectPropertyBlock(updatedSource, updatedSurfacesBlock.start, updatedSurfacesBlock.end, surfaceId)
+        : null;
+
+      if (!updatedSurfaceBlock) {
+        throw new Error("character_surface_not_found");
+      }
+
+      return upsertCharacterSurfaceProperty(updatedSource, updatedSurfaceBlock, propertyName, value);
+    },
+    source,
+  );
 }
 
 function upsertCharacterLayerSource(source, { surfaceId, layerId, layer }) {
@@ -545,8 +867,6 @@ function deleteCharacterLayerSource(source, { surfaceId, layerId }) {
 }
 
 async function saveCharacterLayer(body) {
-  const { safeCharacterId, characterSourcePath } = resolveCharacterSourcePath(body.characterId);
-  const characterBuildPath = resolveCharacterBuildPath(safeCharacterId);
   const layerSnippet = body.layer && typeof body.layer === "object" ? body.layer : {};
   const surfaceId = String(layerSnippet.surfaceId ?? body.surfaceId ?? "").trim();
   const layerId = String(layerSnippet.layerId ?? body.layerId ?? "").trim();
@@ -556,24 +876,52 @@ async function saveCharacterLayer(body) {
     throw new Error("invalid_character_layer");
   }
 
-  const source = await fs.promises.readFile(characterSourcePath, "utf8");
-  const updatedSource = upsertCharacterLayerSource(source, { surfaceId, layerId, layer });
-
-  await fs.promises.writeFile(characterSourcePath, updatedSource, "utf8");
-
-  if (characterBuildPath) {
-    const buildSource = await fs.promises.readFile(characterBuildPath, "utf8");
-    const updatedBuildSource = upsertCharacterLayerSource(buildSource, { surfaceId, layerId, layer });
-
-    await fs.promises.writeFile(characterBuildPath, updatedBuildSource, "utf8");
-  }
+  const saved = await saveCharacterAssets(body, (assets) => upsertLayerInAssets(assets, surfaceId, layerId, layer));
 
   return {
-    characterId: safeCharacterId,
-    path: path.relative(root, characterSourcePath).replaceAll(path.sep, "/"),
-    buildPath: characterBuildPath ? path.relative(root, characterBuildPath).replaceAll(path.sep, "/") : null,
+    ...saved,
     surfaceId,
     layerId,
+  };
+}
+
+async function saveCharacterSurface(body) {
+  const surfaceSnippet = body.surface && typeof body.surface === "object" ? body.surface : {};
+  const surfaceId = String(surfaceSnippet.surfaceId ?? body.surfaceId ?? "").trim();
+  const surface = surfaceSnippet.surface && typeof surfaceSnippet.surface === "object"
+    ? surfaceSnippet.surface
+    : body.surfaceConfig;
+
+  if (!surfaceId || !surface || typeof surface !== "object") {
+    throw new Error("invalid_character_surface");
+  }
+
+  const saved = await saveCharacterAssets(body, (assets) => upsertSurfaceInAssets(assets, surfaceId, surface));
+
+  return {
+    ...saved,
+    surfaceId,
+  };
+}
+
+async function saveCharacterExpression(body) {
+  const expression = String(body.expression ?? body.expressionId ?? "").trim();
+  const assets = Array.isArray(body.assets)
+    ? body.assets.filter((asset) => typeof asset === "string" && asset.trim()).map((asset) => asset.trim())
+    : [];
+
+  if (!expression || assets.length === 0) {
+    throw new Error("invalid_character_expression");
+  }
+
+  const expressionAsset = assets.length === 1 ? assets[0] : assets;
+  const saved = await saveCharacterAssets(body, (currentAssets) =>
+    upsertExpressionInAssets(currentAssets, expression, expressionAsset),
+  );
+
+  return {
+    ...saved,
+    expression,
   };
 }
 
@@ -581,8 +929,6 @@ async function saveCharacterLayer(body) {
  * Deletes one layer definition from the selected character source file.
  */
 async function deleteCharacterLayer(body) {
-  const { safeCharacterId, characterSourcePath } = resolveCharacterSourcePath(body.characterId);
-  const characterBuildPath = resolveCharacterBuildPath(safeCharacterId);
   const surfaceId = String(body.surfaceId ?? body.layer?.surfaceId ?? "").trim();
   const layerId = String(body.layerId ?? body.layer?.layerId ?? "").trim();
 
@@ -590,22 +936,10 @@ async function deleteCharacterLayer(body) {
     throw new Error("invalid_character_layer");
   }
 
-  const source = await fs.promises.readFile(characterSourcePath, "utf8");
-  const updatedSource = deleteCharacterLayerSource(source, { surfaceId, layerId });
-
-  await fs.promises.writeFile(characterSourcePath, updatedSource, "utf8");
-
-  if (characterBuildPath) {
-    const buildSource = await fs.promises.readFile(characterBuildPath, "utf8");
-    const updatedBuildSource = deleteCharacterLayerSource(buildSource, { surfaceId, layerId });
-
-    await fs.promises.writeFile(characterBuildPath, updatedBuildSource, "utf8");
-  }
+  const saved = await saveCharacterAssets(body, (assets) => deleteLayerInAssets(assets, surfaceId, layerId));
 
   return {
-    characterId: safeCharacterId,
-    path: path.relative(root, characterSourcePath).replaceAll(path.sep, "/"),
-    buildPath: characterBuildPath ? path.relative(root, characterBuildPath).replaceAll(path.sep, "/") : null,
+    ...saved,
     surfaceId,
     layerId,
   };
@@ -613,6 +947,124 @@ async function deleteCharacterLayer(body) {
 
 function safeFileName(fileName) {
   return String(fileName || "ghostnest-input.png").replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+/**
+ * Checks whether a project file can be used as a browser image asset.
+ */
+function isImageAssetPath(filePath) {
+  return [".gif", ".jpg", ".jpeg", ".png", ".webp"].includes(path.extname(filePath).toLowerCase());
+}
+
+/**
+ * Returns the asset kind implied by the first folder under assets.
+ */
+function getCharacterAssetKind(assetRelativePath) {
+  const normalizedPath = assetRelativePath.replaceAll("\\", "/");
+  const [kind] = normalizedPath.split("/");
+
+  if (kind === "base") {
+    return "base";
+  }
+
+  if (kind === "parts") {
+    return "part";
+  }
+
+  if (kind === "scenes") {
+    return "scene";
+  }
+
+  return "asset";
+}
+
+/**
+ * Resolves the selected character asset directory without allowing traversal outside src/characters.
+ */
+function resolveCharacterAssetRoot(characterId) {
+  const safeCharacterId = safeFileName(characterId || "rine");
+  const characterAssetRoot = path.resolve(root, "src", "characters", safeCharacterId, "assets");
+  const charactersRoot = path.resolve(root, "src", "characters");
+  const charactersRootWithSeparator = `${charactersRoot}${path.sep}`;
+
+  if (!characterAssetRoot.startsWith(charactersRootWithSeparator)) {
+    throw new Error("invalid_character_id");
+  }
+
+  return {
+    safeCharacterId,
+    characterAssetRoot,
+  };
+}
+
+/**
+ * Resolves shared assets used across characters and scenes.
+ */
+function resolveCommonAssetRoot() {
+  return path.resolve(root, "src", "assets", "common");
+}
+
+/**
+ * Recursively collects image assets from a character asset directory.
+ */
+async function walkImageAssets(directory, options = {}) {
+  const assetRootDirectory = options.assetRootDirectory ?? directory;
+  const scope = options.scope ?? "character";
+  const entries = await fs.promises.readdir(directory, { withFileTypes: true });
+  const files = [];
+
+  for (const entry of entries) {
+    const entryPath = path.join(directory, entry.name);
+
+    if (entry.isDirectory()) {
+      const childFiles = await walkImageAssets(entryPath, { assetRootDirectory, scope });
+
+      files.push(...childFiles);
+      continue;
+    }
+
+    if (!entry.isFile() || !isImageAssetPath(entryPath)) {
+      continue;
+    }
+
+    const stats = await fs.promises.stat(entryPath);
+    const relativePath = path.relative(root, entryPath).replaceAll(path.sep, "/");
+    const assetRelativePath = path.relative(assetRootDirectory, entryPath).replaceAll(path.sep, "/");
+
+    files.push({
+      fileName: entry.name,
+      path: `./${relativePath}`,
+      kind: getCharacterAssetKind(assetRelativePath),
+      scope,
+      size: stats.size,
+      updatedAt: stats.mtime.toISOString(),
+    });
+  }
+
+  return files;
+}
+
+/**
+ * Reads all saved image assets that the layer editor can reuse for one character.
+ */
+async function readCharacterAssetFiles(characterId) {
+  const { safeCharacterId, characterAssetRoot } = resolveCharacterAssetRoot(characterId);
+  const commonAssetRoot = resolveCommonAssetRoot();
+  const characterFiles = fs.existsSync(characterAssetRoot)
+    ? await walkImageAssets(characterAssetRoot, { assetRootDirectory: characterAssetRoot, scope: "character" })
+    : [];
+  const commonFiles = fs.existsSync(commonAssetRoot)
+    ? await walkImageAssets(commonAssetRoot, { assetRootDirectory: commonAssetRoot, scope: "common" })
+    : [];
+  const files = [...characterFiles, ...commonFiles];
+
+  return {
+    characterId: safeCharacterId,
+    files: files.sort((left, right) => left.path.localeCompare(right.path, undefined, {
+      numeric: true,
+      sensitivity: "base",
+    })),
+  };
 }
 
 function parseDataUrl(dataUrl) {
@@ -1082,8 +1534,8 @@ async function generateWithComfyUi(body) {
 }
 
 async function handleGenerateLayerPart(request, response) {
-  if (!isAssetGeneratorBridgeEnabled()) {
-    sendAssetGeneratorBridgeDisabled(response);
+  if (!isComfyAssetGeneratorBridgeEnabled()) {
+    sendComfyAssetGeneratorBridgeDisabled(response);
     return true;
   }
 
@@ -1173,8 +1625,8 @@ async function handleGenerateLayerPart(request, response) {
 }
 
 async function handleComfyModels(request, response) {
-  if (!isAssetGeneratorBridgeEnabled()) {
-    sendAssetGeneratorBridgeDisabled(response);
+  if (!isComfyAssetGeneratorBridgeEnabled()) {
+    sendComfyAssetGeneratorBridgeDisabled(response);
     return true;
   }
 
@@ -1204,11 +1656,11 @@ async function handleComfyModels(request, response) {
 }
 
 async function handleCharacterAssets(request, response) {
-  if (!isAssetGeneratorEnabled()) {
+  if (!isCharacterSettingsEnabled()) {
     sendJson(response, 404, {
       ok: false,
       error: "extension_not_enabled",
-      message: "Asset Generator extension is not enabled in ghost-nest.extensions.json.",
+      message: "Character Settings extension is not enabled in ghost-nest.extensions.json.",
     });
     return true;
   }
@@ -1242,11 +1694,11 @@ async function handleCharacterAssets(request, response) {
 }
 
 async function handleCharacters(request, response) {
-  if (!isAssetGeneratorEnabled()) {
+  if (!isCharacterSettingsEnabled()) {
     sendJson(response, 404, {
       ok: false,
       error: "extension_not_enabled",
-      message: "Asset Generator extension is not enabled in ghost-nest.extensions.json.",
+      message: "Character Settings extension is not enabled in ghost-nest.extensions.json.",
     });
     return true;
   }
@@ -1276,12 +1728,53 @@ async function handleCharacters(request, response) {
   return true;
 }
 
-async function handleSaveCharacterLayer(request, response) {
-  if (!isAssetGeneratorEnabled()) {
+/**
+ * Handles saved asset list requests for the layer editor.
+ */
+async function handleAssetFiles(request, response) {
+  if (!isCharacterSettingsEnabled()) {
     sendJson(response, 404, {
       ok: false,
       error: "extension_not_enabled",
-      message: "Asset Generator extension is not enabled in ghost-nest.extensions.json.",
+      message: "Character Settings extension is not enabled in ghost-nest.extensions.json.",
+    });
+    return true;
+  }
+
+  if (request.method !== "GET") {
+    sendJson(response, 405, { ok: false, error: "method_not_allowed" });
+    return true;
+  }
+
+  try {
+    const requestUrl = new URL(request.url, `http://127.0.0.1:${port}`);
+    const characterId = requestUrl.searchParams.get("characterId") || "rine";
+
+    sendJson(response, 200, {
+      ok: true,
+      ...await readCharacterAssetFiles(characterId),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "asset_files_failed";
+
+    sendJson(response, 404, {
+      ok: false,
+      error: message,
+      message: message === "character_asset_root_not_found"
+        ? "Character asset directory was not found."
+        : "Saved asset files could not be loaded.",
+    });
+  }
+
+  return true;
+}
+
+async function handleSaveCharacterLayer(request, response) {
+  if (!isCharacterSettingsEnabled()) {
+    sendJson(response, 404, {
+      ok: false,
+      error: "extension_not_enabled",
+      message: "Character Settings extension is not enabled in ghost-nest.extensions.json.",
     });
     return true;
   }
@@ -1322,15 +1815,106 @@ async function handleSaveCharacterLayer(request, response) {
   return true;
 }
 
+async function handleSaveCharacterSurface(request, response) {
+  if (!isCharacterSettingsEnabled()) {
+    sendJson(response, 404, {
+      ok: false,
+      error: "extension_not_enabled",
+      message: "Character Settings extension is not enabled in ghost-nest.extensions.json.",
+    });
+    return true;
+  }
+
+  if (request.method !== "POST") {
+    sendJson(response, 405, { ok: false, error: "method_not_allowed" });
+    return true;
+  }
+
+  try {
+    const body = await readRequestJson(request);
+    const saved = await saveCharacterSurface(body);
+
+    sendJson(response, 200, {
+      ok: true,
+      message: "Character surface saved.",
+      saved,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "save_character_surface_failed";
+    const statusCode = [
+      "invalid_json",
+      "invalid_character_id",
+      "character_source_not_found",
+      "invalid_character_surface",
+      "character_assets_not_found",
+      "character_surfaces_not_found",
+      "object_block_not_found",
+    ].includes(message) ? 400 : 500;
+
+    sendJson(response, statusCode, {
+      ok: false,
+      error: message,
+      message: "Character surface could not be saved.",
+    });
+  }
+
+  return true;
+}
+
+async function handleSaveCharacterExpression(request, response) {
+  if (!isCharacterSettingsEnabled()) {
+    sendJson(response, 404, {
+      ok: false,
+      error: "extension_not_enabled",
+      message: "Character Settings extension is not enabled in ghost-nest.extensions.json.",
+    });
+    return true;
+  }
+
+  if (request.method !== "POST") {
+    sendJson(response, 405, { ok: false, error: "method_not_allowed" });
+    return true;
+  }
+
+  try {
+    const body = await readRequestJson(request);
+    const saved = await saveCharacterExpression(body);
+
+    sendJson(response, 200, {
+      ok: true,
+      message: "Character expression saved.",
+      saved,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "save_character_expression_failed";
+    const statusCode = [
+      "invalid_json",
+      "invalid_character_id",
+      "character_source_not_found",
+      "invalid_character_expression",
+      "character_assets_not_found",
+      "object_block_not_found",
+    ].includes(message) ? 400 : 500;
+
+    sendJson(response, statusCode, {
+      ok: false,
+      error: message,
+      message: "Character expression could not be saved.",
+    });
+  }
+
+  return true;
+}
+
 /**
  * Handles character layer delete requests for the dev asset tool.
  */
 async function handleDeleteCharacterLayer(request, response) {
-  if (!isAssetGeneratorEnabled()) {
+  if (!isCharacterSettingsEnabled()) {
     sendJson(response, 404, {
       ok: false,
       error: "extension_not_enabled",
-      message: "Asset Generator extension is not enabled in ghost-nest.extensions.json.",
+      message: "Character Settings extension is not enabled in ghost-nest.extensions.json.",
     });
     return true;
   }
@@ -1375,8 +1959,8 @@ async function handleDeleteCharacterLayer(request, response) {
 }
 
 async function handleSaveGeneratedAssets(request, response) {
-  if (!isAssetGeneratorBridgeEnabled()) {
-    sendAssetGeneratorBridgeDisabled(response);
+  if (!isComfyAssetGeneratorBridgeEnabled()) {
+    sendComfyAssetGeneratorBridgeDisabled(response);
     return true;
   }
 
@@ -1433,8 +2017,20 @@ async function handleApiRequest(request, response) {
     return handleCharacters(request, response);
   }
 
+  if (pathname === "/api/devtools/asset-files") {
+    return handleAssetFiles(request, response);
+  }
+
   if (pathname === "/api/devtools/save-character-layer") {
     return handleSaveCharacterLayer(request, response);
+  }
+
+  if (pathname === "/api/devtools/save-character-surface") {
+    return handleSaveCharacterSurface(request, response);
+  }
+
+  if (pathname === "/api/devtools/save-character-expression") {
+    return handleSaveCharacterExpression(request, response);
   }
 
   if (pathname === "/api/devtools/delete-character-layer") {
@@ -1476,7 +2072,8 @@ const server = http.createServer(async (request, response) => {
 
 server.listen(port, "127.0.0.1", () => {
   console.log(`GhostNest runtime is running at http://127.0.0.1:${port}`);
-  console.log(`GhostNest Asset Generator bridge enabled: ${isAssetGeneratorBridgeEnabled()}`);
+  console.log(`GhostNest Character Settings enabled: ${isCharacterSettingsEnabled()}`);
+  console.log(`GhostNest Comfy Asset Generator bridge enabled: ${isComfyAssetGeneratorBridgeEnabled()}`);
   console.log(`GhostNest ComfyUI bridge target: ${getComfyUiUrl()}`);
   console.log(`GhostNest ComfyUI workflow path: ${getConfiguredWorkflowPath()}`);
   console.log(`GhostNest ComfyUI resolved workflow path: ${getResolvedWorkflowPath()}`);
