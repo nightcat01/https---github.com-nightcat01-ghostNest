@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GhostNest Expression Settings</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="asset-lab-shell">
+      <header class="asset-lab-header">
+        <div>
+          <p class="eyebrow">Character Settings Plugin</p>
+          <h1>Expression 등록</h1>
+        </div>
+        <a class="asset-lab-back" href="./dev-character.html">캐릭터 설정</a>
+      </header>
+
+      <nav class="asset-tool-nav" aria-label="Character setting pages">
+        <a href="./dev-character.html">설정 홈</a>
+        <a href="./dev-character-create.html">캐릭터 만들기</a>
+        <a aria-current="page" href="./dev-character-expression.html">Expression 등록</a>
+        <a href="./dev-character-set.html">Set 등록</a>
+        <a href="./dev-assets-layer.html">Layer 만들기</a>
+        <a href="./dev-character-scene.html">Scene 등록</a>
+        <a href="./dev-assets-crop.html">Crop</a>
+      </nav>
+
+      <section class="asset-lab-grid" aria-label="Expression settings">
+        <section class="asset-lab-panel">
+          <div class="asset-lab-section">
+            <h2>캐릭터</h2>
+            <p class="asset-lab-help">Expression을 저장할 캐릭터 폴더를 선택합니다.</p>
+            <label>
+              캐릭터
+              <select id="characterSelect">
+                <option value="">캐릭터를 불러오는 중이에요.</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="asset-lab-section">
+            <h2>Expression 이미지 후보</h2>
+            <p class="asset-lab-help">표정 이름이 먼저 base 이미지 후보를 고릅니다. 여러 장을 선택하면 런타임에서 랜덤으로 사용합니다.</p>
+            <div class="asset-lab-field-grid">
+              <label>
+                Expression
+                <select id="expressionSelect">
+                  <option value="neutral">neutral</option>
+                  <option value="happy">happy</option>
+                  <option value="thinking">thinking</option>
+                  <option value="surprised">surprised</option>
+                  <option value="__new_expression__">새 Expression 추가</option>
+                </select>
+              </label>
+              <label id="customExpressionField" hidden>
+                새 Expression 이름
+                <input id="customExpressionInput" type="text" placeholder="예: shy" autocomplete="off" />
+              </label>
+              <label>
+                연결할 base 이미지
+                <select id="expressionAssetSelect" multiple size="8">
+                  <option value="">저장된 에셋을 불러오는 중이에요.</option>
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <div class="asset-lab-section asset-composition-save-section">
+            <h2>저장</h2>
+            <p class="asset-lab-help">선택한 base 이미지 목록을 assets.expressions에 저장합니다. 이후 Set 등록에서 이 후보 중 하나를 base로 선택합니다.</p>
+            <div class="asset-lab-actions">
+              <button type="button" id="saveExpressionButton">Expression 저장</button>
+            </div>
+            <p class="asset-lab-status" id="expressionStatus" role="status">Expression을 등록할 준비가 됐어요.</p>
+          </div>
+        </section>
+
+        <section class="asset-lab-panel asset-lab-output-panel">
+          <div class="asset-lab-output-header">
+            <h2>이미지 미리보기</h2>
+          </div>
+          <div class="asset-expression-preview-grid" id="expressionPreviewGrid" aria-live="polite"></div>
+          <pre id="expressionOutput" aria-live="polite"></pre>
+        </section>
+      </section>
+    </main>
+    <script type="module" src="./dist/devtools/assetExpression.js"></script>
+  </body>
+</html>

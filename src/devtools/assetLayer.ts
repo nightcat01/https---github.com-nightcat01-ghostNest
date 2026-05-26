@@ -23,6 +23,12 @@ type SaveResponse = {
     layerId: string;
   };
 };
+type SaveAssetFilesResponse = {
+  ok?: boolean;
+  error?: string;
+  message?: string;
+  saved?: Array<{ fileName: string; path: string }>;
+};
 type DeleteResponse = {
   ok?: boolean;
   error?: string;
@@ -180,6 +186,8 @@ const baseImageInput = requireElement(document.querySelector<HTMLInputElement>("
 const baseAssetSelect = requireElement(document.querySelector<HTMLSelectElement>("#baseAssetSelect"), "#baseAssetSelect");
 const partImagesInput = requireElement(document.querySelector<HTMLInputElement>("#partImagesInput"), "#partImagesInput");
 const partAssetSelect = requireElement(document.querySelector<HTMLSelectElement>("#partAssetSelect"), "#partAssetSelect");
+const uploadBaseAssetButton = requireElement(document.querySelector<HTMLButtonElement>("#uploadBaseAssetButton"), "#uploadBaseAssetButton");
+const uploadPartAssetsButton = requireElement(document.querySelector<HTMLButtonElement>("#uploadPartAssetsButton"), "#uploadPartAssetsButton");
 const addPartAssetFramesButton = requireElement(document.querySelector<HTMLButtonElement>("#addPartAssetFramesButton"), "#addPartAssetFramesButton");
 const frameListSelect = requireElement(document.querySelector<HTMLSelectElement>("#frameListSelect"), "#frameListSelect");
 const moveFrameUpButton = requireElement(document.querySelector<HTMLButtonElement>("#moveFrameUpButton"), "#moveFrameUpButton");
@@ -241,6 +249,13 @@ function createCharacterAssetBasePath(assetSaveKind: AssetSaveKind) {
  */
 function createCharacterAssetSaveDirectory(assetSaveKind: AssetSaveKind) {
   return `src/characters/${getActiveCharacterId()}/assets/${assetSaveKind}`;
+}
+
+/**
+ * Returns whether an image came from a browser upload and can be written to disk.
+ */
+function isUploadImage(image: LayerImage | LabImage | null | undefined): image is LayerImage {
+  return Boolean(image?.dataUrl.startsWith("data:"));
 }
 
 /**
@@ -557,7 +572,7 @@ function validateLayerSaveTarget() {
   }
 
   if (surfaceSelect.value === newSurfaceSelectValue) {
-    return "새 Set에는 바로 Layer를 저장하지 말고, Set 조합하기에서 expression과 base를 먼저 저장하세요.";
+    return "새 Set에는 바로 Layer를 저장하지 말고, Set 등록에서 expression과 base를 먼저 저장하세요.";
   }
 
   const surface = getTargetSurface();
@@ -567,11 +582,11 @@ function validateLayerSaveTarget() {
   }
 
   if (!surface.expression) {
-    return "이 Set에는 expression이 연결되어 있지 않아요. Set 조합하기에서 Surface expression을 먼저 저장하세요.";
+    return "이 Set에는 expression이 연결되어 있지 않아요. Set 등록에서 Expression을 먼저 저장하세요.";
   }
 
   if (!surface.image) {
-    return "이 Set에는 base 이미지가 없어요. Set 조합하기에서 Set Base 이미지를 먼저 저장하세요.";
+    return "이 Set에는 base 이미지가 없어요. Set 등록에서 Set Base 이미지를 먼저 저장하세요.";
   }
 
   return null;
@@ -639,12 +654,14 @@ function createSavedAssetImage(assetFile: AssetFile): LayerImage {
 function renderSavedAssetOptions() {
   const baseAssets = savedAssetFiles.filter((assetFile) => assetFile.kind === "base" && assetFile.scope !== "common");
   const partAssets = savedAssetFiles.filter((assetFile) => assetFile.kind === "part");
+  const characterPartAssets = partAssets.filter((assetFile) => assetFile.scope !== "common");
+  const commonPartAssets = partAssets.filter((assetFile) => assetFile.scope === "common");
 
   baseAssetSelect.replaceChildren(new Option(baseAssets.length > 0 ? "기본 이미지 초기화" : "assets/base 이미지가 없어요.", ""));
   partAssetSelect.replaceChildren();
 
   if (partAssets.length === 0) {
-    partAssetSelect.append(new Option("assets/parts 이미지가 없어요.", ""));
+    partAssetSelect.append(new Option("캐릭터 parts와 공통 parts 이미지가 없어요.", ""));
   } else {
     partAssetSelect.append(new Option("파츠 선택 없음", ""));
   }
@@ -654,11 +671,25 @@ function renderSavedAssetOptions() {
 
     baseAssetSelect.append(new Option(label, assetFile.path));
   });
-  partAssets.forEach((assetFile) => {
-    const label = createSavedAssetOptionLabel(assetFile);
+  appendAssetOptionGroup(partAssetSelect, "캐릭터 parts", characterPartAssets);
+  appendAssetOptionGroup(partAssetSelect, "공통 parts", commonPartAssets);
+}
 
-    partAssetSelect.append(new Option(label, assetFile.path));
+/**
+ * Appends a visible option group so shared parts are not hidden among character files.
+ */
+function appendAssetOptionGroup(select: HTMLSelectElement, label: string, assetFiles: AssetFile[]) {
+  if (assetFiles.length === 0) {
+    return;
+  }
+
+  const group = document.createElement("optgroup");
+
+  group.label = `${label} (${assetFiles.length})`;
+  assetFiles.forEach((assetFile) => {
+    group.append(new Option(createSavedAssetOptionLabel(assetFile), assetFile.path));
   });
+  select.append(group);
 }
 
 /**
@@ -741,6 +772,63 @@ function appendSelectedPartAssetFrames() {
 
   appendPartFrames(selectedPartAssets.map(createSavedAssetImage));
   renderOutputs();
+}
+
+/**
+ * Saves browser-selected images into the character asset folders.
+ */
+async function uploadAssetImages(assetKind: AssetSaveKind, images: LayerImage[]) {
+  if (images.length === 0) {
+    status.textContent = assetKind === "base"
+      ? "base에 저장할 기준 이미지를 먼저 선택하세요."
+      : "parts에 저장할 파츠 이미지를 먼저 선택하세요.";
+    return;
+  }
+
+  const targetButton = assetKind === "base" ? uploadBaseAssetButton : uploadPartAssetsButton;
+
+  targetButton.disabled = true;
+  status.textContent = `${assetKind} 폴더에 이미지 ${images.length}개를 저장하는 중이에요.`;
+
+  try {
+    const response = await fetch("/api/devtools/save-asset-files", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        directory: createCharacterAssetSaveDirectory(assetKind),
+        images: images.map((image) => ({
+          fileName: image.fileName,
+          dataUrl: image.dataUrl,
+        })),
+      }),
+    });
+    const result = await readApiJson<SaveAssetFilesResponse>(response);
+
+    if (!response.ok || !result.ok) {
+      status.textContent = result.message ?? `이미지 저장 실패: ${result.error ?? response.status}`;
+      return;
+    }
+
+    await loadSavedAssetFiles();
+
+    const savedPaths = (result.saved ?? []).map((savedFile) => `./${savedFile.path}`);
+
+    if (assetKind === "base") {
+      baseAssetSelect.value = savedPaths[0] ?? "";
+      applySavedBaseAsset();
+    } else {
+      Array.from(partAssetSelect.options).forEach((option) => {
+        option.selected = savedPaths.includes(option.value);
+      });
+      applySavedPartAssets();
+    }
+
+    status.textContent = `${assetKind} 폴더에 이미지 ${result.saved?.length ?? 0}개를 저장했어요.`;
+  } catch (error) {
+    status.textContent = error instanceof Error ? error.message : "이미지 저장 요청에 실패했어요.";
+  } finally {
+    targetButton.disabled = false;
+  }
 }
 
 /**
@@ -1816,7 +1904,13 @@ function init() {
     baseImage = file ? await readImageFile(file) : null;
     renderOutputs();
   });
+  uploadBaseAssetButton.addEventListener("click", () => {
+    void uploadAssetImages("base", isUploadImage(baseImage) ? [baseImage] : []);
+  });
   baseAssetSelect.addEventListener("change", applySavedBaseAsset);
+  uploadPartAssetsButton.addEventListener("click", () => {
+    void uploadAssetImages("parts", partImages.filter(isUploadImage));
+  });
   assetSaveKindSelect.addEventListener("change", () => {
     syncAssetSavePathsFromKind();
     renderOutputs();

@@ -14,7 +14,11 @@ type CharacterRendererOptions = {
   character: CharacterDefinition;
 };
 
-function pickExpressionAsset(asset: string | string[], currentAsset: string | null) {
+function pickExpressionAsset(asset: string | string[] | undefined, currentAsset: string | null) {
+  if (!asset) {
+    return null;
+  }
+
   if (typeof asset === "string") {
     return asset;
   }

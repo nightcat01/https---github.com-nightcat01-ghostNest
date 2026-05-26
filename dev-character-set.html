@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GhostNest Set Settings</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="asset-lab-shell">
+      <header class="asset-lab-header">
+        <div>
+          <p class="eyebrow">Character Settings Plugin</p>
+          <h1>Set 등록</h1>
+        </div>
+        <a class="asset-lab-back" href="./dev-character.html">캐릭터 설정</a>
+      </header>
+
+      <nav class="asset-tool-nav" aria-label="Character setting pages">
+        <a href="./dev-character.html">설정 홈</a>
+        <a href="./dev-character-create.html">캐릭터 만들기</a>
+        <a href="./dev-character-expression.html">Expression 등록</a>
+        <a aria-current="page" href="./dev-character-set.html">Set 등록</a>
+        <a href="./dev-assets-layer.html">Layer 만들기</a>
+        <a href="./dev-character-scene.html">Scene 등록</a>
+        <a href="./dev-assets-crop.html">Crop</a>
+      </nav>
+
+      <section class="asset-lab-grid" aria-label="Set settings">
+        <section class="asset-lab-panel">
+          <div class="asset-lab-section">
+            <h2>캐릭터</h2>
+            <p class="asset-lab-help">Set을 저장할 캐릭터 폴더를 선택합니다.</p>
+            <label>
+              캐릭터
+              <select id="characterSelect">
+                <option value="">캐릭터를 불러오는 중이에요.</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="asset-lab-section">
+            <h2>Set 기본 구성</h2>
+            <p class="asset-lab-help">Expression이 선택한 특정 base 이미지에 붙을 조합 단위입니다. 이 Set 아래에 Layer가 추가됩니다.</p>
+            <div class="asset-lab-field-grid">
+              <label>
+                Set
+                <select id="surfaceSelect">
+                  <option value="">캐릭터를 먼저 선택하세요.</option>
+                </select>
+              </label>
+              <label>
+                Set ID
+                <input id="surfaceIdInput" type="text" value="0" autocomplete="off" />
+              </label>
+              <label>
+                연결 Expression
+                <select id="surfaceExpressionSelect">
+                  <option value="">없음</option>
+                  <option value="neutral">neutral</option>
+                  <option value="happy">happy</option>
+                  <option value="thinking">thinking</option>
+                  <option value="surprised">surprised</option>
+                </select>
+              </label>
+              <label>
+                Alt
+                <input id="surfaceAltInput" type="text" autocomplete="off" />
+              </label>
+            </div>
+          </div>
+
+          <div class="asset-lab-section">
+            <h2>Set Base 이미지</h2>
+            <p class="asset-lab-help">이 Set의 기준 이미지입니다. 연결 Expression의 이미지 후보 중 하나와 같아야 Layer까지 정상 연결됩니다.</p>
+            <label>
+              저장된 기본 이미지
+              <select id="baseAssetSelect">
+                <option value="">저장된 에셋을 불러오는 중이에요.</option>
+              </select>
+            </label>
+            <label>
+              직접 이미지 경로
+              <input id="surfaceImageInput" type="text" autocomplete="off" />
+            </label>
+          </div>
+
+          <div class="asset-lab-section asset-composition-save-section">
+            <h2>저장</h2>
+            <p class="asset-lab-help">Set 기본 구성을 assets.surfaces에 저장합니다. Layer는 저장된 Set 위에 붙입니다.</p>
+            <div class="asset-lab-actions">
+              <button type="button" id="saveSurfaceConfigButton">Set 저장</button>
+            </div>
+            <p class="asset-lab-status" id="setStatus" role="status">Set을 등록할 준비가 됐어요.</p>
+          </div>
+        </section>
+
+        <section class="asset-lab-panel asset-lab-output-panel">
+          <div class="asset-lab-output-header">
+            <h2>미리보기</h2>
+          </div>
+          <div class="asset-composite-preview" id="setPreview" aria-live="polite"></div>
+          <pre id="setOutput" aria-live="polite"></pre>
+        </section>
+      </section>
+    </main>
+    <script type="module" src="./dist/devtools/assetSet.js"></script>
+  </body>
+</html>

@@ -7,11 +7,12 @@ export type CharacterSettingsExtensionConfig = {
 export const characterSettingsExtension = {
   id: "character-settings",
   name: "Character Settings",
-  description: "Developer extension pages for editing character crops, surfaces, and layers.",
+  description: "Developer extension pages for editing character scenes, crops, surfaces, and layers.",
   route: "./dev-character.html",
   capabilities: [
     "character-crop-editor",
     "surface-layer-composition",
+    "scene-composition",
     "saved-character-assets",
   ],
 } as const;

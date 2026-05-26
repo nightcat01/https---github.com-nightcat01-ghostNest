@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GhostNest Character Create</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="asset-lab-shell">
+      <header class="asset-lab-header">
+        <div>
+          <p class="eyebrow">Character Settings Plugin</p>
+          <h1>캐릭터 만들기</h1>
+        </div>
+        <a class="asset-lab-back" href="./dev-character.html">캐릭터 설정</a>
+      </header>
+
+      <nav class="asset-tool-nav" aria-label="Character setting pages">
+        <a href="./dev-character.html">설정 홈</a>
+        <a aria-current="page" href="./dev-character-create.html">캐릭터 만들기</a>
+        <a href="./dev-character-expression.html">Expression 등록</a>
+        <a href="./dev-character-set.html">Set 등록</a>
+        <a href="./dev-assets-layer.html">Layer 만들기</a>
+        <a href="./dev-character-scene.html">Scene 등록</a>
+        <a href="./dev-assets-crop.html">Crop</a>
+      </nav>
+
+      <section class="asset-lab-grid" aria-label="Create character">
+        <section class="asset-lab-panel">
+          <div class="asset-lab-section">
+            <h2>기본 정보</h2>
+            <p class="asset-lab-help">새 캐릭터 폴더와 최소 설정 파일을 만듭니다. 생성 후 Expression, Set, Layer 순서로 이어가세요.</p>
+            <div class="asset-lab-field-grid">
+              <label>
+                캐릭터 ID
+                <input id="characterIdInput" type="text" placeholder="예: rine" autocomplete="off" />
+              </label>
+              <label>
+                표시 이름
+                <input id="characterNameInput" type="text" placeholder="예: 리네" autocomplete="off" />
+              </label>
+              <label>
+                설명
+                <input id="characterDescriptionInput" type="text" placeholder="캐릭터 소개" autocomplete="off" />
+              </label>
+              <label>
+                말투
+                <input id="characterToneInput" type="text" placeholder="차분하고 친근한 말투" autocomplete="off" />
+              </label>
+            </div>
+          </div>
+
+          <div class="asset-lab-section asset-composition-save-section">
+            <h2>생성</h2>
+            <p class="asset-lab-help">src/characters 아래에 profile.ts, lines.ts, index.ts와 assets/base, assets/parts 폴더를 만듭니다.</p>
+            <div class="asset-lab-actions">
+              <button type="button" id="createCharacterButton">캐릭터 만들기</button>
+            </div>
+            <p class="asset-lab-status" id="characterCreateStatus" role="status">새 캐릭터를 만들 준비가 됐어요.</p>
+          </div>
+        </section>
+
+        <section class="asset-lab-panel asset-lab-output-panel">
+          <div class="asset-lab-output-header">
+            <h2>생성 미리보기</h2>
+          </div>
+          <pre id="characterCreateOutput" aria-live="polite"></pre>
+        </section>
+      </section>
+    </main>
+    <script type="module" src="./dist/devtools/assetCharacter.js"></script>
+  </body>
+</html>

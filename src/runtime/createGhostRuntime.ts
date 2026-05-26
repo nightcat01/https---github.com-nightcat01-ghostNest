@@ -68,7 +68,18 @@ export function createGhostRuntime(options: GhostRuntimeOptions): GhostRuntime {
   const cleanupCallbacks: Array<() => void> = [];
   const actionTimers = new Map<string, number>();
   const ruleCooldowns = new Map<string, number>();
-  const sceneRenderer = createSceneRenderer({ elements, scene: options.scene });
+  const characterScene = options.character.assets
+    && (options.character.assets.defaultScene || options.character.assets.scenes || options.character.assets.sceneSets)
+    ? {
+      ...(options.character.assets.defaultScene ? { defaultScene: options.character.assets.defaultScene } : {}),
+      ...(options.character.assets.scenes ? { scenes: options.character.assets.scenes } : {}),
+      ...(options.character.assets.sceneSets ? { sceneSets: options.character.assets.sceneSets } : {}),
+    }
+    : undefined;
+  const sceneRenderer = createSceneRenderer({
+    elements,
+    scene: characterScene ?? options.scene,
+  });
   const characterRenderer = createCharacterRenderer({ elements, character: options.character });
   const diagnostics = createRuntimeDiagnostics({
     selectors: options.devtools?.diagnostics?.selectors,

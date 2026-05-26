@@ -907,7 +907,7 @@ h1 {
 .asset-lab-section .asset-lab-checkbox:has(#regionOverlayVisibleInput) {
   width: max-content;
   max-width: 100%;
-  grid-template-columns: minmax(0, auto) auto;
+  display: inline-flex;
   align-items: center;
   gap: 8px;
   margin-bottom: 12px;
@@ -919,7 +919,12 @@ h1 {
 
 .asset-lab-section .asset-lab-checkbox:has(#regionOverlayVisibleInput) input {
   order: 2;
+  flex: 0 0 auto;
   margin-top: 0;
+}
+
+.asset-lab-section .asset-lab-checkbox:has(#regionOverlayVisibleInput) span {
+  display: inline;
 }
 
 .asset-lab-section .asset-lab-checkbox span {
@@ -1045,6 +1050,13 @@ h1 {
   gap: 12px;
 }
 
+.asset-expression-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
 .asset-preview-card {
   min-height: 210px;
   display: grid;
@@ -1077,6 +1089,21 @@ h1 {
     8px -8px,
     -8px 0;
   background-size: 16px 16px;
+}
+
+.asset-expression-preview-card {
+  min-height: 0;
+}
+
+.asset-expression-preview-card img {
+  height: 260px;
+}
+
+.asset-expression-preview-card small {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  overflow-wrap: anywhere;
 }
 
 .asset-preview-media {
@@ -1130,6 +1157,53 @@ h1 {
     10px -10px,
     -10px 0;
   background-size: 20px 20px;
+}
+
+.asset-scene-preview {
+  position: relative;
+  min-height: 420px;
+  overflow: hidden;
+  border: 1px solid rgba(38, 35, 31, 0.12);
+  border-radius: 8px;
+  background:
+    linear-gradient(45deg, rgba(38, 35, 31, 0.04) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(38, 35, 31, 0.04) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(38, 35, 31, 0.04) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(38, 35, 31, 0.04) 75%),
+    rgba(255, 255, 255, 0.58);
+  background-position:
+    0 0,
+    0 10px,
+    10px -10px,
+    -10px 0;
+  background-size: 20px 20px;
+}
+
+.asset-scene-preview-layer {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.asset-scene-preview-layer img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: fill;
+}
+
+.asset-scene-character-slot {
+  border: 2px dashed rgba(50, 119, 108, 0.64);
+  border-radius: 999px 999px 32px 32px;
+  color: rgba(50, 119, 108, 0.82);
+  background: rgba(50, 119, 108, 0.1);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
 }
 
 .asset-composite-stage {
@@ -1377,7 +1451,19 @@ h1 {
   font-weight: 700;
 }
 
+.asset-upload-block {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.asset-upload-block label {
+  margin-bottom: 0;
+}
+
 .asset-layer-preview-inputs .asset-region-overlay-toggle {
+  grid-column: 1 / -1;
   justify-self: start;
 }
 
@@ -1388,6 +1474,11 @@ h1 {
 .asset-layer-preview-inputs .asset-frame-actions,
 .asset-layer-preview-inputs label:has(#frameListSelect) {
   grid-column: 1 / -1;
+}
+
+.asset-layer-preview-inputs .asset-upload-actions {
+  justify-content: start;
+  margin-top: -2px;
 }
 
 .asset-layer-preview-inputs input[type="number"],

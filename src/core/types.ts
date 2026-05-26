@@ -44,7 +44,7 @@ export type CharacterDefinition = {
   assets?: CharacterAssets;
 };
 
-export type CharacterExpression = "neutral" | "happy" | "thinking" | "surprised";
+export type CharacterExpression = "neutral" | "happy" | "thinking" | "surprised" | (string & {});
 
 export type CharacterTouchArea = {
   minX: number;
@@ -56,6 +56,9 @@ export type CharacterTouchArea = {
 export type CharacterAssets = {
   expressions: Record<CharacterExpression, CharacterExpressionAsset>;
   surfaces?: Record<string, CharacterSurface>;
+  defaultScene?: string;
+  scenes?: Record<string, RuntimeScene>;
+  sceneSets?: Record<string, RuntimeScene[]>;
   alt: string;
   hitAreas?: Partial<Record<CharacterTouchPart, CharacterTouchArea>>;
 };

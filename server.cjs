@@ -273,18 +273,31 @@ async function readCharacterAssets(characterId) {
 }
 
 async function readCharacterList() {
-  const charactersDirectory = path.join(root, "dist", "characters");
+  const sourceCharactersDirectory = path.join(root, "src", "characters");
+  const buildCharactersDirectory = path.join(root, "dist", "characters");
+  const characterIds = new Set();
 
-  if (!fs.existsSync(charactersDirectory)) {
-    throw new Error("character_dist_not_found");
+  if (fs.existsSync(sourceCharactersDirectory)) {
+    const sourceEntries = await fs.promises.readdir(sourceCharactersDirectory, { withFileTypes: true });
+
+    sourceEntries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .filter((characterId) => fs.existsSync(path.join(sourceCharactersDirectory, characterId, "index.ts")))
+      .forEach((characterId) => characterIds.add(characterId));
   }
 
-  const entries = await fs.promises.readdir(charactersDirectory, { withFileTypes: true });
+  if (fs.existsSync(buildCharactersDirectory)) {
+    const buildEntries = await fs.promises.readdir(buildCharactersDirectory, { withFileTypes: true });
 
-  return entries
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .filter((characterId) => fs.existsSync(path.join(charactersDirectory, characterId, "index.js")))
+    buildEntries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .filter((characterId) => fs.existsSync(path.join(buildCharactersDirectory, characterId, "index.js")))
+      .forEach((characterId) => characterIds.add(characterId));
+  }
+
+  return Array.from(characterIds)
     .sort((left, right) => left.localeCompare(right, undefined, { numeric: true, sensitivity: "base" }));
 }
 
@@ -680,6 +693,22 @@ function upsertExpressionInAssets(assets, expression, asset) {
   };
 }
 
+function upsertSceneInAssets(assets, sceneId, scene, shouldSetDefaultScene) {
+  const scenes = assets.scenes ?? {};
+
+  return {
+    ...assets,
+    ...(shouldSetDefaultScene ? { defaultScene: sceneId } : {}),
+    scenes: {
+      ...scenes,
+      [sceneId]: {
+        ...scene,
+        id: sceneId,
+      },
+    },
+  };
+}
+
 async function saveCharacterAssets(body, mergeAssets) {
   const { safeCharacterId, characterSourcePath } = resolveCharacterSourcePath(body.characterId);
   const characterBuildPath = resolveCharacterBuildPath(safeCharacterId);
@@ -922,6 +951,163 @@ async function saveCharacterExpression(body) {
   return {
     ...saved,
     expression,
+  };
+}
+
+async function saveCharacterScene(body) {
+  const sceneSnippet = body.scene && typeof body.scene === "object" ? body.scene : {};
+  const sceneId = String(sceneSnippet.sceneId ?? body.sceneId ?? "").trim();
+  const scene = sceneSnippet.scene && typeof sceneSnippet.scene === "object"
+    ? sceneSnippet.scene
+    : body.sceneConfig;
+  const shouldSetDefaultScene = Boolean(sceneSnippet.defaultScene ?? body.defaultScene);
+
+  if (!sceneId || !scene || typeof scene !== "object" || !Array.isArray(scene.layers)) {
+    throw new Error("invalid_character_scene");
+  }
+
+  const saved = await saveCharacterAssets(body, (assets) =>
+    upsertSceneInAssets(assets, sceneId, scene, shouldSetDefaultScene),
+  );
+
+  return {
+    ...saved,
+    sceneId,
+  };
+}
+
+function toExportName(characterId) {
+  return safeFileName(characterId)
+    .replace(/^[^a-zA-Z_]+/, "")
+    .replace(/[^a-zA-Z0-9_]/g, "_") || "character";
+}
+
+/**
+ * Creates starter dialogue categories for newly generated characters.
+ */
+function createDefaultCharacterLines(displayName) {
+  return {
+    onMount: [`${displayName} 캐릭터 제작을 시작했어요.`],
+    onClick: [`${displayName} 설정을 이어서 채워주세요.`],
+    onTouchHead: ["머리 터치 반응 대사를 채워주세요."],
+    onTouchFace: ["얼굴 터치 반응 대사를 채워주세요."],
+    onTouchBody: ["몸 터치 반응 대사를 채워주세요."],
+    onHoverRuntimeTitle: ["타이틀 영역에 마우스를 올렸을 때의 안내 대사입니다."],
+    onHoverEventLog: ["이벤트 로그를 설명하는 대사입니다."],
+    onHoverCommandMenu: ["명령 메뉴를 설명하는 대사입니다."],
+    onHoverFortuneCommand: ["확장 명령을 설명하는 대사입니다."],
+    onHoverLineCommand: ["대사 버튼을 설명하는 대사입니다."],
+    onHoverHideCommand: ["숨기기 버튼을 설명하는 대사입니다."],
+    onRandomPrompt: ["잠깐 말을 걸어오는 랜덤 대사를 채워주세요."],
+    onIdle: ["조용히 기다리고 있어요."],
+    onLine: ["아직 대사가 많지 않아요. lines.ts에서 대사를 확장하세요."],
+    onHide: ["잠시 숨어 있을게요."],
+    onShow: ["다시 돌아왔어요."],
+  };
+}
+
+function createCharacterSourceFiles(characterId, profile) {
+  const exportName = toExportName(characterId);
+  const displayName = String(profile.name ?? characterId).trim() || characterId;
+  const description = String(profile.description ?? "").trim() || `${displayName} character`;
+  const tone = String(profile.tone ?? "").trim() || "차분하고 친근한 말투";
+  const lines = createDefaultCharacterLines(displayName);
+
+  return {
+    profile: `import type { CharacterProfile } from "../../core/types.js";\n\nexport const ${exportName}Profile: CharacterProfile = ${JSON.stringify({
+      id: characterId,
+      name: displayName,
+      description,
+      tone,
+      defaultExpression: "neutral",
+    }, null, 2)};\n`,
+    lines: `import type { DialogueLineSet } from "../../core/types.js";\n\nexport const ${exportName}Lines: DialogueLineSet = ${JSON.stringify(lines, null, 2)};\n`,
+    index: `import { ${exportName}Lines } from "./lines.js";\nimport { ${exportName}Profile } from "./profile.js";\nimport type { CharacterDefinition } from "../../core/types.js";\n\nexport const ${exportName}: CharacterDefinition = {\n  profile: ${exportName}Profile,\n  lines: ${exportName}Lines,\n  assets: ${JSON.stringify({
+      alt: displayName,
+      expressions: {},
+      surfaces: {},
+      hitAreas: {
+        head: { minX: 0.2, maxX: 0.8, minY: 0, maxY: 0.35 },
+        face: { minX: 0.22, maxX: 0.78, minY: 0.35, maxY: 0.58 },
+        body: { minX: 0.1, maxX: 0.9, minY: 0.58, maxY: 1 },
+      },
+    }, null, 2)},\n};\n\nexport default ${exportName};\n`,
+  };
+}
+
+function createCharacterBuildFiles(characterId, profile) {
+  const exportName = toExportName(characterId);
+  const displayName = String(profile.name ?? characterId).trim() || characterId;
+  const description = String(profile.description ?? "").trim() || `${displayName} character`;
+  const tone = String(profile.tone ?? "").trim() || "차분하고 친근한 말투";
+  const lines = createDefaultCharacterLines(displayName);
+
+  return {
+    profile: `export const ${exportName}Profile = ${JSON.stringify({
+      id: characterId,
+      name: displayName,
+      description,
+      tone,
+      defaultExpression: "neutral",
+    }, null, 2)};\n`,
+    lines: `export const ${exportName}Lines = ${JSON.stringify(lines, null, 2)};\n`,
+    index: `import { ${exportName}Lines } from "./lines.js";\nimport { ${exportName}Profile } from "./profile.js";\nexport const ${exportName} = {\n  profile: ${exportName}Profile,\n  lines: ${exportName}Lines,\n  assets: ${JSON.stringify({
+      alt: displayName,
+      expressions: {},
+      surfaces: {},
+      hitAreas: {
+        head: { minX: 0.2, maxX: 0.8, minY: 0, maxY: 0.35 },
+        face: { minX: 0.22, maxX: 0.78, minY: 0.35, maxY: 0.58 },
+        body: { minX: 0.1, maxX: 0.9, minY: 0.58, maxY: 1 },
+      },
+    }, null, 2)},\n};\n\nexport default ${exportName};\n`,
+  };
+}
+
+async function createCharacter(body) {
+  const characterId = safeFileName(String(body.characterId ?? "").trim());
+
+  if (!characterId || characterId === "ghostnest-input.png") {
+    throw new Error("invalid_character_id");
+  }
+
+  const sourceDirectory = path.resolve(root, "src", "characters", characterId);
+  const buildDirectory = path.resolve(root, "dist", "characters", characterId);
+  const charactersRoot = path.resolve(root, "src", "characters");
+  const charactersRootWithSeparator = `${charactersRoot}${path.sep}`;
+
+  if (!sourceDirectory.startsWith(charactersRootWithSeparator)) {
+    throw new Error("invalid_character_id");
+  }
+
+  if (fs.existsSync(path.join(sourceDirectory, "index.ts"))) {
+    throw new Error("character_already_exists");
+  }
+
+  const profile = {
+    name: body.name,
+    description: body.description,
+    tone: body.tone,
+  };
+  const sourceFiles = createCharacterSourceFiles(characterId, profile);
+  const buildFiles = createCharacterBuildFiles(characterId, profile);
+
+  await fs.promises.mkdir(path.join(sourceDirectory, "assets", "base"), { recursive: true });
+  await fs.promises.mkdir(path.join(sourceDirectory, "assets", "parts"), { recursive: true });
+  await fs.promises.mkdir(path.join(sourceDirectory, "assets", "scenes"), { recursive: true });
+  await fs.promises.writeFile(path.join(sourceDirectory, "profile.ts"), sourceFiles.profile, "utf8");
+  await fs.promises.writeFile(path.join(sourceDirectory, "lines.ts"), sourceFiles.lines, "utf8");
+  await fs.promises.writeFile(path.join(sourceDirectory, "index.ts"), sourceFiles.index, "utf8");
+
+  await fs.promises.mkdir(buildDirectory, { recursive: true });
+  await fs.promises.writeFile(path.join(buildDirectory, "profile.js"), buildFiles.profile, "utf8");
+  await fs.promises.writeFile(path.join(buildDirectory, "lines.js"), buildFiles.lines, "utf8");
+  await fs.promises.writeFile(path.join(buildDirectory, "index.js"), buildFiles.index, "utf8");
+
+  return {
+    characterId,
+    path: path.relative(root, path.join(sourceDirectory, "index.ts")).replaceAll(path.sep, "/"),
+    buildPath: path.relative(root, path.join(buildDirectory, "index.js")).replaceAll(path.sep, "/"),
   };
 }
 
@@ -1906,6 +2092,93 @@ async function handleSaveCharacterExpression(request, response) {
   return true;
 }
 
+async function handleCreateCharacter(request, response) {
+  if (!isCharacterSettingsEnabled()) {
+    sendJson(response, 404, {
+      ok: false,
+      error: "extension_not_enabled",
+      message: "Character Settings extension is not enabled in ghost-nest.extensions.json.",
+    });
+    return true;
+  }
+
+  if (request.method !== "POST") {
+    sendJson(response, 405, { ok: false, error: "method_not_allowed" });
+    return true;
+  }
+
+  try {
+    const body = await readRequestJson(request);
+    const created = await createCharacter(body);
+
+    sendJson(response, 200, {
+      ok: true,
+      message: "Character created.",
+      created,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "create_failed";
+    const statusCode = [
+      "invalid_json",
+      "invalid_character_id",
+      "character_already_exists",
+    ].includes(message) ? 400 : 500;
+
+    sendJson(response, statusCode, {
+      ok: false,
+      error: message,
+      message: "Character could not be created.",
+    });
+  }
+
+  return true;
+}
+
+async function handleSaveCharacterScene(request, response) {
+  if (!isCharacterSettingsEnabled()) {
+    sendJson(response, 404, {
+      ok: false,
+      error: "extension_not_enabled",
+      message: "Character Settings extension is not enabled in ghost-nest.extensions.json.",
+    });
+    return true;
+  }
+
+  if (request.method !== "POST") {
+    sendJson(response, 405, { ok: false, error: "method_not_allowed" });
+    return true;
+  }
+
+  try {
+    const body = await readRequestJson(request);
+    const saved = await saveCharacterScene(body);
+
+    sendJson(response, 200, {
+      ok: true,
+      message: "Character scene saved.",
+      saved,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "save_character_scene_failed";
+    const statusCode = [
+      "invalid_json",
+      "invalid_character_id",
+      "character_source_not_found",
+      "invalid_character_scene",
+      "character_assets_not_found",
+      "object_block_not_found",
+    ].includes(message) ? 400 : 500;
+
+    sendJson(response, statusCode, {
+      ok: false,
+      error: message,
+      message: "Character scene could not be saved.",
+    });
+  }
+
+  return true;
+}
+
 /**
  * Handles character layer delete requests for the dev asset tool.
  */
@@ -1998,6 +2271,50 @@ async function handleSaveGeneratedAssets(request, response) {
   return true;
 }
 
+async function handleSaveAssetFiles(request, response) {
+  if (!isCharacterSettingsEnabled()) {
+    sendJson(response, 404, {
+      ok: false,
+      error: "extension_not_enabled",
+      message: "Character Settings extension is not enabled in ghost-nest.extensions.json.",
+    });
+    return true;
+  }
+
+  if (request.method !== "POST") {
+    sendJson(response, 405, { ok: false, error: "method_not_allowed" });
+    return true;
+  }
+
+  try {
+    const body = await readRequestJson(request);
+    const saved = await saveGeneratedAssets(body);
+
+    sendJson(response, 200, {
+      ok: true,
+      message: "Asset files saved.",
+      saved,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "save_failed";
+    const statusCode = [
+      "invalid_json",
+      "invalid_save_directory",
+      "save_directory_outside_project",
+      "no_images_to_save",
+      "invalid_data_url",
+    ].includes(message) ? 400 : 500;
+
+    sendJson(response, statusCode, {
+      ok: false,
+      error: message,
+      message: "Asset files could not be saved.",
+    });
+  }
+
+  return true;
+}
+
 async function handleApiRequest(request, response) {
   const pathname = new URL(request.url, `http://127.0.0.1:${port}`).pathname;
 
@@ -2017,6 +2334,10 @@ async function handleApiRequest(request, response) {
     return handleCharacters(request, response);
   }
 
+  if (pathname === "/api/devtools/create-character") {
+    return handleCreateCharacter(request, response);
+  }
+
   if (pathname === "/api/devtools/asset-files") {
     return handleAssetFiles(request, response);
   }
@@ -2033,12 +2354,20 @@ async function handleApiRequest(request, response) {
     return handleSaveCharacterExpression(request, response);
   }
 
+  if (pathname === "/api/devtools/save-character-scene") {
+    return handleSaveCharacterScene(request, response);
+  }
+
   if (pathname === "/api/devtools/delete-character-layer") {
     return handleDeleteCharacterLayer(request, response);
   }
 
   if (pathname === "/api/devtools/save-generated-assets") {
     return handleSaveGeneratedAssets(request, response);
+  }
+
+  if (pathname === "/api/devtools/save-asset-files") {
+    return handleSaveAssetFiles(request, response);
   }
 
   return false;

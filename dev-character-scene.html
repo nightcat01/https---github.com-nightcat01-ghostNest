@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GhostNest Scene Settings</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="asset-lab-shell">
+      <header class="asset-lab-header">
+        <div>
+          <p class="eyebrow">Character Settings Plugin</p>
+          <h1>Scene 등록</h1>
+        </div>
+        <a class="asset-lab-back" href="./dev-character.html">캐릭터 설정</a>
+      </header>
+
+      <nav class="asset-tool-nav" aria-label="Character setting pages">
+        <a href="./dev-character.html">설정 홈</a>
+        <a href="./dev-character-create.html">캐릭터 만들기</a>
+        <a href="./dev-character-expression.html">Expression 등록</a>
+        <a href="./dev-character-set.html">Set 등록</a>
+        <a href="./dev-assets-layer.html">Layer 만들기</a>
+        <a aria-current="page" href="./dev-character-scene.html">Scene 등록</a>
+        <a href="./dev-assets-crop.html">Crop</a>
+      </nav>
+
+      <section class="asset-lab-grid" aria-label="Scene settings">
+        <section class="asset-lab-panel">
+          <div class="asset-lab-section">
+            <h2>캐릭터</h2>
+            <p class="asset-lab-help">Scene을 저장할 캐릭터 폴더를 선택합니다.</p>
+            <label>
+              캐릭터
+              <select id="characterSelect">
+                <option value="">캐릭터를 불러오는 중이에요.</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="asset-lab-section">
+            <h2>Scene 기본 정보</h2>
+            <p class="asset-lab-help">Scene은 배경, 캐릭터 위치, 책상이나 소품, FX를 하나의 무대 조합으로 저장합니다.</p>
+            <div class="asset-lab-field-grid">
+              <label>
+                Scene
+                <select id="sceneSelect">
+                  <option value="__new_scene__">새 Scene 만들기</option>
+                </select>
+              </label>
+              <label>
+                Scene ID
+                <input id="sceneIdInput" type="text" value="desk-room" autocomplete="off" />
+              </label>
+              <label class="asset-lab-checkbox asset-inline-checkbox">
+                <input id="defaultSceneInput" type="checkbox" checked />
+                <span>기본 Scene으로 사용</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="asset-lab-section">
+            <h2>배경</h2>
+            <p class="asset-lab-help">캐릭터 뒤에 깔리는 가장 아래 레이어입니다. 이미지가 없어도 배경색만 저장할 수 있습니다.</p>
+            <div class="asset-lab-field-grid">
+              <label>
+                배경 이미지
+                <select id="backgroundAssetSelect">
+                  <option value="">저장된 scene 이미지를 불러오는 중이에요.</option>
+                </select>
+              </label>
+              <label>
+                배경색
+                <input id="backgroundColorInput" type="text" placeholder="#f7f1e8" autocomplete="off" />
+              </label>
+              <label>
+                Depth
+                <input id="backgroundDepthInput" type="number" value="0" />
+              </label>
+            </div>
+          </div>
+
+          <div class="asset-lab-section">
+            <h2>캐릭터 위치</h2>
+            <p class="asset-lab-help">실제 캐릭터 이미지는 여기서 고르지 않고, Scene 안에서 몇 번째 깊이에 놓을지만 정합니다.</p>
+            <label>
+              Character Depth
+              <input id="characterDepthInput" type="number" value="20" />
+            </label>
+          </div>
+
+          <div class="asset-lab-section">
+            <h2>책상 / 소품</h2>
+            <p class="asset-lab-help">캐릭터와 겹칠 수 있는 소품 레이어입니다. 캐릭터 depth보다 높으면 캐릭터 앞에 보입니다.</p>
+            <div class="asset-lab-field-grid">
+              <label>
+                소품 이미지
+                <select id="propAssetSelect">
+                  <option value="">저장된 에셋을 불러오는 중이에요.</option>
+                </select>
+              </label>
+              <label>
+                Depth
+                <input id="propDepthInput" type="number" value="30" />
+              </label>
+              <label>
+                X %
+                <input id="propXInput" type="number" value="20" />
+              </label>
+              <label>
+                Y %
+                <input id="propYInput" type="number" value="74" />
+              </label>
+              <label>
+                Width %
+                <input id="propWidthInput" type="number" value="80" />
+              </label>
+              <label>
+                Height %
+                <input id="propHeightInput" type="number" value="25" />
+              </label>
+            </div>
+          </div>
+
+          <div class="asset-lab-section">
+            <h2>FX</h2>
+            <p class="asset-lab-help">빛, 감정 효과, 전경 장식처럼 Scene 위에 얹는 효과 레이어입니다.</p>
+            <div class="asset-lab-field-grid">
+              <label>
+                FX 이미지
+                <select id="effectAssetSelect">
+                  <option value="">저장된 에셋을 불러오는 중이에요.</option>
+                </select>
+              </label>
+              <label>
+                Depth
+                <input id="effectDepthInput" type="number" value="40" />
+              </label>
+              <label>
+                X %
+                <input id="effectXInput" type="number" value="0" />
+              </label>
+              <label>
+                Y %
+                <input id="effectYInput" type="number" value="0" />
+              </label>
+              <label>
+                Width %
+                <input id="effectWidthInput" type="number" value="100" />
+              </label>
+              <label>
+                Height %
+                <input id="effectHeightInput" type="number" value="100" />
+              </label>
+            </div>
+          </div>
+
+          <div class="asset-lab-section asset-composition-save-section">
+            <h2>저장</h2>
+            <p class="asset-lab-help">Scene 구성은 캐릭터의 assets.scenes에 저장됩니다. 기본 Scene으로 체크하면 런타임 fallback scene으로 사용됩니다.</p>
+            <div class="asset-lab-actions">
+              <button type="button" id="saveSceneButton">Scene 저장</button>
+            </div>
+            <p class="asset-lab-status" id="sceneStatus" role="status">Scene 등록을 준비하고 있어요.</p>
+          </div>
+        </section>
+
+        <section class="asset-lab-panel asset-lab-output-panel">
+          <div class="asset-lab-output-header">
+            <h2>미리보기</h2>
+          </div>
+          <div class="asset-scene-preview" id="scenePreview" aria-live="polite"></div>
+          <pre id="sceneOutput" aria-live="polite"></pre>
+        </section>
+      </section>
+    </main>
+    <script type="module" src="./dist/devtools/assetScene.js"></script>
+  </body>
+</html>
