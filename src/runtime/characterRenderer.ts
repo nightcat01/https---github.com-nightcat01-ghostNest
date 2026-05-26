@@ -14,8 +14,6 @@ type CharacterRendererOptions = {
   character: CharacterDefinition;
 };
 
-const spriteLayerIds = ["ears", "eyes", "mouth", "accessory"] as const satisfies CharacterLayerId[];
-
 function pickExpressionAsset(asset: string | string[], currentAsset: string | null) {
   if (typeof asset === "string") {
     return asset;
@@ -37,18 +35,6 @@ function setupSpriteLayerElements(sprite: HTMLButtonElement, baseImage: HTMLImag
   baseImage.classList.add("character-sprite-layer");
   baseImage.dataset.layerId = "base";
   layers.set("base", baseImage);
-
-  spriteLayerIds.forEach((layerId) => {
-    const layerImage = document.createElement("img");
-
-    layerImage.className = "character-sprite-layer";
-    layerImage.dataset.layerId = layerId;
-    layerImage.alt = "";
-    layerImage.hidden = true;
-    layerImage.setAttribute("aria-hidden", "true");
-    sprite.append(layerImage);
-    layers.set(layerId, layerImage);
-  });
 
   return layers;
 }
@@ -83,6 +69,50 @@ function getLayerFrame(layer: CharacterLayer, frameIndex: number) {
   return layer.frames?.[frameIndex] ?? layer.image ?? null;
 }
 
+function getRenderableLayerIds(surface: CharacterSurface): CharacterLayerId[] {
+  const layerIds = Object.keys(surface.layers ?? {}).filter((layerId) => layerId !== "base") as CharacterLayerId[];
+
+  if (surface.mouthImages && !layerIds.includes("mouth")) {
+    layerIds.push("mouth");
+  }
+
+  return layerIds;
+}
+
+function isFullCoverLayer(layer: CharacterLayer) {
+  return Boolean(layer.coversBase && !layer.placement);
+}
+
+function shouldKeepLayerVisibleWhenInactive(layer: CharacterLayer) {
+  return Boolean(!isFullCoverLayer(layer) && !layer.idleIntervalMs);
+}
+
+function resetLayerPlacement(layerElement: HTMLImageElement) {
+  layerElement.style.removeProperty("left");
+  layerElement.style.removeProperty("top");
+  layerElement.style.removeProperty("width");
+  layerElement.style.removeProperty("height");
+  layerElement.style.removeProperty("z-index");
+  layerElement.dataset.placement = "full";
+}
+
+function applyLayerPlacement(layerElement: HTMLImageElement, layer: CharacterLayer) {
+  const placement = layer.placement;
+
+  if (!placement) {
+    resetLayerPlacement(layerElement);
+    layerElement.style.zIndex = String(layer.depth ?? 10);
+    return;
+  }
+
+  layerElement.dataset.placement = placement.unit ?? "percent";
+  layerElement.style.left = `${placement.x}%`;
+  layerElement.style.top = `${placement.y}%`;
+  layerElement.style.width = `${placement.width}%`;
+  layerElement.style.height = `${placement.height}%`;
+  layerElement.style.zIndex = String(layer.depth ?? 10);
+}
+
 /**
  * Creates the DOM renderer for character expressions, surfaces, and layer animations.
  * This module owns visual state only; actions and rules decide when the state changes.
@@ -90,7 +120,29 @@ function getLayerFrame(layer: CharacterLayer, frameIndex: number) {
 export function createCharacterRenderer({ elements, character }: CharacterRendererOptions) {
   const spriteLayers = setupSpriteLayerElements(elements.sprite, elements.spriteImage);
   const activeLayerAnimations = new Map<CharacterLayerId, number>();
+  const activeLayerIds = new Set<CharacterLayerId>();
+  const idleLayerAnimations = new Map<CharacterLayerId, number>();
   let currentSurface: CharacterSurface | null = null;
+
+  function getLayerElement(layerId: CharacterLayerId) {
+    const existingLayerElement = spriteLayers.get(layerId);
+
+    if (existingLayerElement) {
+      return existingLayerElement;
+    }
+
+    const layerImage = document.createElement("img");
+
+    layerImage.className = "character-sprite-layer";
+    layerImage.dataset.layerId = layerId;
+    layerImage.alt = "";
+    layerImage.hidden = true;
+    layerImage.setAttribute("aria-hidden", "true");
+    elements.sprite.append(layerImage);
+    spriteLayers.set(layerId, layerImage);
+
+    return layerImage;
+  }
 
   function findSurfaceForExpression(expression: CharacterExpression) {
     const surfaces = character.assets?.surfaces;
@@ -103,14 +155,13 @@ export function createCharacterRenderer({ elements, character }: CharacterRender
   }
 
   function clearPartLayers() {
-    spriteLayerIds.forEach((layerId) => {
-      const layerElement = spriteLayers.get(layerId);
-
-      if (!layerElement) {
+    spriteLayers.forEach((layerElement, layerId) => {
+      if (layerId === "base") {
         return;
       }
 
       layerElement.removeAttribute("src");
+      resetLayerPlacement(layerElement);
       layerElement.hidden = true;
     });
   }
@@ -140,20 +191,21 @@ export function createCharacterRenderer({ elements, character }: CharacterRender
   function renderStaticPartLayers(surface: CharacterSurface) {
     clearPartLayers();
 
-    spriteLayerIds.forEach((layerId) => {
+    getRenderableLayerIds(surface).forEach((layerId) => {
       const layer = getSurfaceLayer(surface, layerId);
 
-      if (!layer || layer.coversBase) {
+      if (!layer || layer.coversBase || layer.idleIntervalMs) {
         return;
       }
 
       const layerImage = getLayerFrame(layer, 0);
-      const layerElement = spriteLayers.get(layerId);
+      const layerElement = getLayerElement(layerId);
 
-      if (!layerImage || !layerElement) {
+      if (!layerImage) {
         return;
       }
 
+      applyLayerPlacement(layerElement, layer);
       layerElement.src = layerImage;
       layerElement.hidden = false;
     });
@@ -176,10 +228,10 @@ export function createCharacterRenderer({ elements, character }: CharacterRender
   }
 
   function applyPartFrame(layerId: CharacterLayerId, layer: CharacterLayer, frameIndex: number, isActive: boolean) {
-    const layerElement = spriteLayers.get(layerId);
+    const layerElement = getLayerElement(layerId);
     const nextImage = getLayerFrame(layer, frameIndex);
 
-    if (!layerElement || !nextImage) {
+    if (!nextImage) {
       return;
     }
 
@@ -187,10 +239,20 @@ export function createCharacterRenderer({ elements, character }: CharacterRender
       layerElement.src = nextImage;
     }
 
+    applyLayerPlacement(layerElement, layer);
     layerElement.hidden = false;
 
-    if (layer.coversBase) {
-      elements.spriteImage.hidden = isActive;
+    if (isActive && isFullCoverLayer(layer)) {
+      elements.spriteImage.hidden = true;
+      spriteLayers.forEach((otherLayerElement, otherLayerId) => {
+        if (otherLayerId === layerId) {
+          return;
+        }
+
+        if (otherLayerId !== "base") {
+          otherLayerElement.hidden = true;
+        }
+      });
     }
   }
 
@@ -203,6 +265,19 @@ export function createCharacterRenderer({ elements, character }: CharacterRender
     }
   }
 
+  function stopIdleLayerAnimations() {
+    idleLayerAnimations.forEach((timerId) => window.clearInterval(timerId));
+    idleLayerAnimations.clear();
+  }
+
+  function hasActiveFullCoverLayer() {
+    return Array.from(activeLayerIds).some((activeLayerId) => {
+      const activeLayer = getSurfaceLayer(currentSurface, activeLayerId);
+
+      return activeLayer ? isFullCoverLayer(activeLayer) : false;
+    });
+  }
+
   function setLayerAnimationActive(layerId: CharacterLayerId, isActive: boolean) {
     stopLayerAnimation(layerId);
 
@@ -210,11 +285,13 @@ export function createCharacterRenderer({ elements, character }: CharacterRender
     const layerElement = spriteLayers.get(layerId);
 
     if (!isActive || !layer) {
-      if (!Array.from(activeLayerAnimations.keys()).some((activeLayerId) => getSurfaceLayer(currentSurface, activeLayerId)?.coversBase)) {
+      activeLayerIds.delete(layerId);
+
+      if (!hasActiveFullCoverLayer()) {
         elements.spriteImage.hidden = false;
       }
 
-      if (layer && !layer.coversBase) {
+      if (layer && shouldKeepLayerVisibleWhenInactive(layer)) {
         applyPartFrame(layerId, layer, 0, false);
       } else if (layerElement) {
         layerElement.hidden = true;
@@ -229,6 +306,11 @@ export function createCharacterRenderer({ elements, character }: CharacterRender
       return;
     }
 
+    if (hasActiveFullCoverLayer() && !isFullCoverLayer(layer)) {
+      return;
+    }
+
+    activeLayerIds.add(layerId);
     let frameIndex = frameCount > 1 ? 1 : 0;
     applyPartFrame(layerId, layer, frameIndex, true);
 
@@ -249,11 +331,41 @@ export function createCharacterRenderer({ elements, character }: CharacterRender
   }
 
   function stopLayerAnimations() {
-    Array.from(activeLayerAnimations.keys()).forEach((layerId) => setLayerAnimationActive(layerId, false));
+    Array.from(activeLayerIds).forEach((layerId) => setLayerAnimationActive(layerId, false));
+  }
+
+  function startIdleLayerAnimations(surface: CharacterSurface) {
+    stopIdleLayerAnimations();
+
+    getRenderableLayerIds(surface).forEach((layerId) => {
+      const layer = getSurfaceLayer(surface, layerId);
+      const idleIntervalMs = layer?.idleIntervalMs ?? 0;
+
+      if (!layer || idleIntervalMs <= 0) {
+        return;
+      }
+
+      const timerId = window.setInterval(() => {
+        if (activeLayerIds.has(layerId) || hasActiveFullCoverLayer()) {
+          return;
+        }
+
+        const frameCount = Math.max(layer.frames?.length ?? 0, layer.image ? 1 : 0);
+        const playbackMs = Math.max(layer.intervalMs ?? 140, 40) * Math.max(frameCount, 1);
+
+        setLayerAnimationActive(layerId, true);
+        window.setTimeout(() => {
+          setLayerAnimationActive(layerId, false);
+        }, playbackMs);
+      }, idleIntervalMs);
+
+      idleLayerAnimations.set(layerId, timerId);
+    });
   }
 
   function renderState(state: Pick<RuntimeState, "expression" | "lastTouchedPart">) {
     stopLayerAnimations();
+    stopIdleLayerAnimations();
     elements.sprite.dataset.expression = state.expression;
     elements.spriteImage.alt = character.assets?.alt ?? character.profile.name;
 
@@ -261,6 +373,7 @@ export function createCharacterRenderer({ elements, character }: CharacterRender
 
     if (surface) {
       applySurfaceDefinition(surface);
+      startIdleLayerAnimations(surface);
     } else {
       currentSurface = null;
       delete elements.sprite.dataset.surfaceId;
@@ -293,7 +406,10 @@ export function createCharacterRenderer({ elements, character }: CharacterRender
       return;
     }
 
+    stopLayerAnimations();
+    stopIdleLayerAnimations();
     applySurfaceDefinition(surface);
+    startIdleLayerAnimations(surface);
   }
 
   function setMode(mode: CharacterRuntimeMode) {
@@ -302,6 +418,7 @@ export function createCharacterRenderer({ elements, character }: CharacterRender
 
   function destroy() {
     stopLayerAnimations();
+    stopIdleLayerAnimations();
   }
 
   return {

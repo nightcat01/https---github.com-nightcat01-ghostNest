@@ -173,8 +173,6 @@ function renderMenuContent({
       button.addEventListener("focus", () => previewItem?.(item));
     }
     button.addEventListener("click", () => {
-      previewItem?.(item);
-
       if (item.children) {
         renderManagementMenu({
           action,

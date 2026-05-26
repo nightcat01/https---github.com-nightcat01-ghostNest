@@ -46,23 +46,7 @@ export const rine: CharacterDefinition = {
             // Current demo mouth frames are full-size overlays; future assets can use transparent part layers.
             coversBase: true,
           },
-            "eyes": {
-              "frames": [
-                "./src/characters/rine/rine_eye_close.png"
-              ],
-              "depth": 20,
-              "intervalMs": 300,
-              "idleIntervalMs": 1000,
-              "coversBase": false,
-              "placement": {
-                "x": 38.5,
-                "y": 12.7,
-                "width": 13.6,
-                "height": 5.5,
-                "unit": "percent"
-              }
-            },
-},
+        },
       },
       "5": {
         id: "5",

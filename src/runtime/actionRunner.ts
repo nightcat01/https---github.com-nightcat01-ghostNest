@@ -42,6 +42,7 @@ type ActionRunnerContext = {
   renderSpeech: (message: DialogueMessage) => void;
   renderPreviewSpeech: (message: DialogueMessage) => void;
   renderCharacterState: () => void;
+  applySurface: (surfaceId: string) => void;
   setLayerAnimationActive: (layerId: string, isActive: boolean) => void;
   addLog: (label: string) => void;
   touchInteraction: () => void;
@@ -71,6 +72,7 @@ export function createActionRunner(context: ActionRunnerContext) {
     renderSpeech,
     renderPreviewSpeech,
     renderCharacterState,
+    applySurface,
     setLayerAnimationActive,
     addLog,
     touchInteraction,
@@ -272,6 +274,12 @@ export function createActionRunner(context: ActionRunnerContext) {
       state.lastTouchedPart = null;
     }
     renderCharacterState();
+  });
+
+  registerAction("surface", (action, _) => {
+    const a = action as Extract<BuiltinRuntimeAction, { type: "surface" }>;
+
+    applySurface(a.id);
   });
 
   registerAction("set_touched_part", (action, _) => {

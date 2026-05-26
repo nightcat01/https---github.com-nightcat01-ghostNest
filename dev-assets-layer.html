@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GhostNest Layer Tool</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="asset-lab-shell">
+      <header class="asset-lab-header">
+        <div>
+          <p class="eyebrow">GhostNest Asset Tools</p>
+          <h1>레이어 설정</h1>
+        </div>
+        <a class="asset-lab-back" href="./dev-assets.html">도구 홈</a>
+      </header>
+
+      <nav class="asset-tool-nav" aria-label="Asset tool pages">
+        <a href="./dev-assets-crop.html">Crop 도구</a>
+        <a href="./dev-assets-comfy.html">Comfy 생성</a>
+        <a aria-current="page" href="./dev-assets-layer.html">레이어 설정</a>
+      </nav>
+
+      <section class="asset-lab-grid" aria-label="Layer config tool">
+        <section class="asset-lab-panel">
+          <div class="asset-lab-section">
+            <h2>레이어 입력</h2>
+            <div class="asset-lab-field-grid">
+              <label>
+                캐릭터
+                <select id="characterSelect">
+                  <option value="">캐릭터를 불러오는 중이에요.</option>
+                </select>
+                <input id="characterIdInput" type="hidden" value="rine" autocomplete="off" />
+              </label>
+              <label id="surfaceSelectField" hidden>
+                Surface
+                <select id="surfaceSelect">
+                  <option value="">캐릭터를 먼저 선택하세요.</option>
+                </select>
+              </label>
+              <label id="surfaceIdField" hidden>
+                새 Surface ID
+                <input id="surfaceIdInput" type="text" value="0" autocomplete="off" />
+              </label>
+            </div>
+            <label id="layerSelectField" hidden>
+              Layer
+              <select id="existingLayerSelect">
+                <option value="">Surface를 먼저 선택하세요.</option>
+              </select>
+            </label>
+            <label id="partRecipeField" hidden>
+              파츠 종류
+              <select id="partRecipeSelect">
+                <option value="eyeBlink">눈 깜빡임: 감은 눈</option>
+                <option value="mouthShapes">입 모양</option>
+                <option value="expressionSet">표정 세트</option>
+              </select>
+            </label>
+            <div class="asset-lab-field-grid" id="layerConfigFields" hidden>
+              <label>
+                Layer ID
+                <select id="layerIdSelect">
+                  <option value="eyes">eyes</option>
+                  <option value="mouth">mouth</option>
+                  <option value="ears">ears</option>
+                  <option value="accessory">accessory</option>
+                  <option value="etc">etc / 직접 입력</option>
+                </select>
+              </label>
+              <label>
+                프레임 간격 intervalMs
+                <input id="intervalInput" type="number" min="40" step="10" value="140" />
+              </label>
+              <label>
+                자동 반복 간격 idleIntervalMs
+                <input id="idleIntervalInput" type="number" min="0" step="100" value="4200" />
+              </label>
+            </div>
+            <label id="customLayerIdField" hidden>
+              직접 입력 Layer ID
+              <input id="customLayerIdInput" type="text" value="etc" autocomplete="off" />
+            </label>
+            <label class="asset-lab-checkbox" id="coversBaseField" hidden>
+              <input id="coversBaseInput" type="checkbox" checked />
+              <span>
+                base를 덮는 레이어
+                <small>현재 런타임은 placement를 직접 사용하지 않으므로 전체 크기 투명 PNG일 때 가장 안전해요.</small>
+              </span>
+            </label>
+          </div>
+          <div class="asset-lab-section" id="layerStorageSection" hidden>
+            <h2>저장 설정</h2>
+            <label>
+              에셋 기준 경로
+              <input id="basePathInput" type="text" value="./src/characters/rine/generated/" autocomplete="off" />
+            </label>
+            <label>
+              프로젝트 저장 경로
+              <input id="saveDirectoryInput" type="text" value="src/characters/rine/generated" autocomplete="off" />
+            </label>
+            <div class="asset-lab-actions">
+              <button type="button" id="saveLayerConfigButton">설정 저장</button>
+              <button type="button" id="deleteLayerConfigButton" disabled>Layer 삭제</button>
+              <button type="button" id="copyManifestButton">Manifest 복사</button>
+              <button type="button" id="copyLayerButton">Layer 복사</button>
+            </div>
+            <p class="asset-lab-status" id="layerStatus" role="status">레이어 설정을 만들 준비가 됐어요.</p>
+          </div>
+        </section>
+
+        <section class="asset-lab-panel asset-lab-output-panel" id="layerPreviewSection" hidden>
+          <div class="asset-lab-output-header">
+            <h2>레이어 미리보기</h2>
+            <div class="asset-lab-actions">
+              <button type="button" id="previousFrameButton">이전</button>
+              <button type="button" id="playFramesButton">재생</button>
+              <button type="button" id="nextFrameButton">다음</button>
+            </div>
+          </div>
+          <div class="asset-layer-preview-inputs">
+            <label>
+              기준 이미지
+              <input id="baseImageInput" type="file" accept="image/*" />
+            </label>
+            <label>
+              생성된 파츠 이미지
+              <input id="partImagesInput" type="file" accept="image/*" multiple />
+            </label>
+            <div class="asset-lab-region-grid">
+              <label>X <input id="targetRegionXInput" type="number" min="0" max="100" step="1" /></label>
+              <label>Y <input id="targetRegionYInput" type="number" min="0" max="100" step="1" /></label>
+              <label>W <input id="targetRegionWidthInput" type="number" min="1" max="100" step="1" /></label>
+              <label>H <input id="targetRegionHeightInput" type="number" min="1" max="100" step="1" /></label>
+            </div>
+          </div>
+          <div class="asset-layer-preview-layout">
+            <div class="asset-composite-preview" id="layerPreview" aria-live="polite"></div>
+            <aside class="asset-layer-summary" aria-label="현재 레이어 설정">
+              <h2>현재 설정</h2>
+              <dl id="layerSummary"></dl>
+            </aside>
+          </div>
+          <p class="asset-lab-note">
+            crop 파츠는 placement 기준으로 미리 보여줘요. 실제 런타임 반영은 renderer가 placement를 지원해야 정확히 맞습니다.
+          </p>
+        </section>
+
+        <section class="asset-lab-panel asset-lab-output-panel" id="layerOutputSection" hidden>
+          <div class="asset-output-stack">
+            <section class="asset-output-block">
+              <div class="asset-output-block-header">
+                <h2>Manifest Patch</h2>
+              </div>
+              <pre id="manifestOutput" aria-live="polite"></pre>
+            </section>
+            <section class="asset-output-block">
+              <div class="asset-output-block-header">
+                <h2>Layer Snippet</h2>
+              </div>
+              <pre id="layerSnippetOutput" aria-live="polite"></pre>
+            </section>
+          </div>
+        </section>
+      </section>
+    </main>
+    <script type="module" src="./dist/devtools/assetLayer.js"></script>
+  </body>
+</html>

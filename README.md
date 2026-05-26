@@ -53,6 +53,7 @@ npm.cmd run dev
 | [STORAGE_AND_SETTINGS.md](./STORAGE_AND_SETTINGS.md) | 저장값, 사용자 설정, StorageAdapter 경계 |
 | [UI_RENDERER_BOUNDARY.md](./UI_RENDERER_BOUNDARY.md) | UI renderer 교체 경계 |
 | [DIALOGUE_SCRIPT_GUIDE.md](./DIALOGUE_SCRIPT_GUIDE.md) | JSON 대사 연출 포맷 |
+| [ASSET_GENERATOR_SETUP.md](./ASSET_GENERATOR_SETUP.md) | Asset Generator 확장과 ComfyUI bridge 설정 |
 | [src/characters/README.md](./src/characters/README.md) | 캐릭터 모듈 구조 |
 | [src/demo/README.md](./src/demo/README.md) | 데모 preset 구조 |
 | [src/plugins/README.md](./src/plugins/README.md) | 샘플 플러그인 구조 |

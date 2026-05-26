@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GhostNest Crop Tool</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="asset-lab-shell">
+      <header class="asset-lab-header">
+        <div>
+          <p class="eyebrow">GhostNest Asset Tools</p>
+          <h1>Crop 도구</h1>
+        </div>
+        <a class="asset-lab-back" href="./dev-assets.html">도구 홈</a>
+      </header>
+
+      <nav class="asset-tool-nav" aria-label="Asset tool pages">
+        <a aria-current="page" href="./dev-assets-crop.html">Crop 도구</a>
+        <a href="./dev-assets-comfy.html">Comfy 생성</a>
+        <a href="./dev-assets-layer.html">레이어 설정</a>
+      </nav>
+
+      <section class="asset-lab-grid" aria-label="Crop tool">
+        <section class="asset-lab-panel">
+          <div class="asset-lab-section">
+            <h2>이미지와 영역</h2>
+            <label>
+              생성할 파츠
+              <select id="partRecipeSelect" name="partRecipe">
+                <option value="eyeBlink">눈 깜빡임: 감은 눈</option>
+                <option value="mouthShapes">입 모양: 닫힘, 작게 열림, 열림</option>
+                <option value="expressionSet">표정 세트: 기쁨, 생각, 놀람</option>
+              </select>
+            </label>
+            <label>
+              기준 이미지
+              <input id="baseImageInput" type="file" accept="image/*" />
+            </label>
+            <div class="asset-lab-region-grid">
+              <label>X <input id="targetRegionXInput" type="number" min="0" max="100" step="1" /></label>
+              <label>Y <input id="targetRegionYInput" type="number" min="0" max="100" step="1" /></label>
+              <label>W <input id="targetRegionWidthInput" type="number" min="1" max="100" step="1" /></label>
+              <label>H <input id="targetRegionHeightInput" type="number" min="1" max="100" step="1" /></label>
+            </div>
+            <div class="asset-lab-actions">
+              <button type="button" id="downloadCropButton">Crop 다운로드</button>
+            </div>
+            <p class="asset-lab-status" id="cropStatus" role="status">기준 이미지를 선택하면 영역을 확인할 수 있어요.</p>
+          </div>
+        </section>
+
+        <section class="asset-lab-panel asset-lab-output-panel">
+          <div class="asset-lab-output-header">
+            <h2>영역 미리보기</h2>
+          </div>
+          <div class="asset-composite-preview" id="cropPreview" aria-live="polite"></div>
+        </section>
+      </section>
+    </main>
+    <script type="module" src="./dist/devtools/assetCrop.js"></script>
+  </body>
+</html>

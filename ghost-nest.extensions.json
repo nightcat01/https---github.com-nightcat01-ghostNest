@@ -1,0 +1,12 @@
+{
+  "extensions": {
+    "asset-generator": {
+      "enabled": true,
+      "devServer": {
+        "bridge": false,
+        "comfyUiUrl": "http://127.0.0.1:8188",
+        "workflowPath": "src/devtools/layer-part-workflow.api.json"
+      }
+    }
+  }
+}

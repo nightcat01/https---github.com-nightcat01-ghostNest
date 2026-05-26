@@ -67,8 +67,17 @@ export type CharacterLayerId = "base" | "eyes" | "mouth" | "ears" | "accessory" 
 export type CharacterLayer = {
   image?: string;
   frames?: string[];
+  depth?: number;
   intervalMs?: number;
+  idleIntervalMs?: number;
   coversBase?: boolean;
+  placement?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    unit?: "percent";
+  };
 };
 
 export type CharacterSurface = {
@@ -167,6 +176,10 @@ export type BuiltinRuntimeAction =
       type: "change_expression";
       expression: CharacterExpression;
       clearTouchedPart?: boolean;
+    }
+  | {
+      type: "surface";
+      id: string;
     }
   | {
       type: "set_touched_part";

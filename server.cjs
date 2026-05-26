@@ -1,10 +1,156 @@
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
+const { pathToFileURL } = require("node:url");
 
 const port = Number(process.env.PORT ?? 4173);
+const comfyUiUrl = process.env.COMFYUI_URL ?? "http://127.0.0.1:8188";
 const root = __dirname;
+const extensionConfigPath = path.join(root, "ghost-nest.extensions.json");
 const rootWithSeparator = `${root}${path.sep}`;
+
+function readExtensionConfig() {
+  try {
+    return JSON.parse(fs.readFileSync(extensionConfigPath, "utf8"));
+  } catch (error) {
+    return { extensions: {} };
+  }
+}
+
+function getAssetGeneratorConfig() {
+  return readExtensionConfig().extensions?.["asset-generator"] ?? { enabled: false };
+}
+
+function isAssetGeneratorEnabled() {
+  return Boolean(getAssetGeneratorConfig().enabled);
+}
+
+function isAssetGeneratorBridgeEnabled() {
+  const config = getAssetGeneratorConfig();
+
+  return Boolean(config.enabled && config.devServer?.bridge);
+}
+
+function sendAssetGeneratorBridgeDisabled(response) {
+  sendJson(response, 403, {
+    ok: false,
+    error: "asset_generator_bridge_disabled",
+    message: "Asset Generator devServer.bridge is disabled in ghost-nest.extensions.json. Turn it on to save files or use ComfyUI bridge actions.",
+  });
+}
+
+function getComfyUiUrl() {
+  const config = getAssetGeneratorConfig();
+
+  return process.env.COMFYUI_URL
+    ?? config.devServer?.comfyUiUrl
+    ?? "http://127.0.0.1:8188";
+}
+
+function getConfiguredWorkflowPath() {
+  const config = getAssetGeneratorConfig();
+
+  return process.env.COMFYUI_WORKFLOW_PATH ?? config.devServer?.workflowPath ?? "src/devtools/layer-part-workflow.api.json";
+}
+
+function getDefaultWorkflowPath() {
+  return "src/devtools/layer-part-workflow.api.json";
+}
+
+function getBuiltWorkflowPath() {
+  return "dist/devtools/layer-part-workflow.api.json";
+}
+
+function getWorkflowProfilePaths(modelProfile) {
+  const profile = String(modelProfile ?? "sdxl-inpaint");
+  const workflowProfiles = {
+    "sdxl-inpaint": {
+      source: "src/devtools/layer-part-workflow.sdxl-inpaint.api.json",
+      built: "dist/devtools/layer-part-workflow.sdxl-inpaint.api.json",
+    },
+    "sdxl-general": {
+      source: "src/devtools/layer-part-workflow.sdxl-general.api.json",
+      built: "dist/devtools/layer-part-workflow.sdxl-general.api.json",
+    },
+    "sd15-inpaint": {
+      source: "src/devtools/layer-part-workflow.sd15-inpaint.api.json",
+      built: "dist/devtools/layer-part-workflow.sd15-inpaint.api.json",
+    },
+  };
+
+  return workflowProfiles[profile] ?? workflowProfiles["sdxl-inpaint"];
+}
+
+function getWorkflowPathCandidates() {
+  return Array.from(new Set([
+    getConfiguredWorkflowPath(),
+    getDefaultWorkflowPath(),
+    getBuiltWorkflowPath(),
+  ]));
+}
+
+function getWorkflowPathCandidatesForBody(body = {}) {
+  const source = body.workflowSource ?? {};
+  const profilePaths = getWorkflowProfilePaths(body.modelProfile ?? source.modelProfile);
+
+  return Array.from(new Set([
+    profilePaths.source,
+    profilePaths.built,
+    getConfiguredWorkflowPath(),
+    getDefaultWorkflowPath(),
+    getBuiltWorkflowPath(),
+  ]));
+}
+
+function resolveWorkflowPath(workflowPath) {
+  return path.resolve(root, workflowPath);
+}
+
+function getResolvedWorkflowPath() {
+  return resolveWorkflowPath(getConfiguredWorkflowPath());
+}
+
+function findExistingWorkflowPath(body) {
+  const candidates = body
+    ? getWorkflowPathCandidatesForBody(body)
+    : getWorkflowPathCandidates();
+
+  return candidates
+    .map((workflowPath) => ({
+      workflowPath,
+      resolvedWorkflowPath: resolveWorkflowPath(workflowPath),
+    }))
+    .find((candidate) => fs.existsSync(candidate.resolvedWorkflowPath)) ?? null;
+}
+
+function createWorkflowPathInfo(body) {
+  const selectedWorkflowPath = findExistingWorkflowPath(body);
+  const source = body?.workflowSource ?? {};
+  const profilePaths = getWorkflowProfilePaths(body?.modelProfile ?? source.modelProfile);
+  const workflowPathCandidates = body
+    ? getWorkflowPathCandidatesForBody(body)
+    : getWorkflowPathCandidates();
+
+  return {
+    workflowPath: getConfiguredWorkflowPath(),
+    resolvedWorkflowPath: getResolvedWorkflowPath(),
+    defaultWorkflowPath: getDefaultWorkflowPath(),
+    resolvedDefaultWorkflowPath: resolveWorkflowPath(getDefaultWorkflowPath()),
+    builtWorkflowPath: getBuiltWorkflowPath(),
+    resolvedBuiltWorkflowPath: resolveWorkflowPath(getBuiltWorkflowPath()),
+    modelProfile: body?.modelProfile ?? source.modelProfile ?? null,
+    profileWorkflowPath: profilePaths.source,
+    resolvedProfileWorkflowPath: resolveWorkflowPath(profilePaths.source),
+    builtProfileWorkflowPath: profilePaths.built,
+    resolvedBuiltProfileWorkflowPath: resolveWorkflowPath(profilePaths.built),
+    selectedWorkflowPath: selectedWorkflowPath?.workflowPath ?? null,
+    selectedResolvedWorkflowPath: selectedWorkflowPath?.resolvedWorkflowPath ?? null,
+    workflowPathCandidates: workflowPathCandidates.map((workflowPath) => ({
+      workflowPath,
+      resolvedWorkflowPath: resolveWorkflowPath(workflowPath),
+    })),
+  };
+}
 
 const mimeTypes = {
   ".css": "text/css; charset=utf-8",
@@ -25,7 +171,1288 @@ function resolveRequestPath(url) {
   return filePath;
 }
 
-const server = http.createServer((request, response) => {
+function sendJson(response, statusCode, payload) {
+  response.writeHead(statusCode, { "Content-Type": "application/json; charset=utf-8" });
+  response.end(JSON.stringify(payload));
+}
+
+function readRequestJson(request) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+
+    request.on("data", (chunk) => {
+      chunks.push(chunk);
+    });
+    request.on("end", () => {
+      try {
+        const rawBody = Buffer.concat(chunks).toString("utf8");
+        resolve(rawBody ? JSON.parse(rawBody) : {});
+      } catch (error) {
+        reject(error);
+      }
+    });
+    request.on("error", reject);
+  });
+}
+
+async function checkComfyUiStatus() {
+  const response = await fetch(`${getComfyUiUrl()}/system_stats`, {
+    method: "GET",
+    signal: AbortSignal.timeout(3000),
+  });
+
+  return {
+    ok: response.ok,
+    status: response.status,
+  };
+}
+
+async function fetchComfyObjectInfo() {
+  const response = await fetch(`${getComfyUiUrl()}/object_info`, {
+    method: "GET",
+    signal: AbortSignal.timeout(10000),
+  });
+
+  if (!response.ok) {
+    throw new Error(`object_info_failed:${response.status}`);
+  }
+
+  return response.json();
+}
+
+function readComboValues(objectInfo, nodeName, inputName) {
+  const input = objectInfo?.[nodeName]?.input?.required?.[inputName];
+  const values = Array.isArray(input) ? input[0] : null;
+
+  return Array.isArray(values) ? values.filter((value) => typeof value === "string") : [];
+}
+
+async function getComfyModels() {
+  const objectInfo = await fetchComfyObjectInfo();
+
+  return {
+    checkpoints: readComboValues(objectInfo, "CheckpointLoaderSimple", "ckpt_name"),
+    controlnet: readComboValues(objectInfo, "ControlNetLoader", "control_net_name"),
+    clipVision: readComboValues(objectInfo, "CLIPVisionLoader", "clip_name"),
+  };
+}
+
+async function readCharacterAssets(characterId) {
+  const safeCharacterId = safeFileName(characterId || "rine");
+  const characterModulePath = path.join(root, "dist", "characters", safeCharacterId, "index.js");
+
+  if (!fs.existsSync(characterModulePath)) {
+    throw new Error("character_dist_not_found");
+  }
+
+  const moduleUrl = `${pathToFileURL(characterModulePath).href}?t=${Date.now()}`;
+  const characterModule = await import(moduleUrl);
+  const character = characterModule[safeCharacterId] ?? characterModule.default;
+
+  if (!character?.assets) {
+    throw new Error("character_assets_not_found");
+  }
+
+  return {
+    characterId: safeCharacterId,
+    assets: character.assets,
+  };
+}
+
+async function readCharacterList() {
+  const charactersDirectory = path.join(root, "dist", "characters");
+
+  if (!fs.existsSync(charactersDirectory)) {
+    throw new Error("character_dist_not_found");
+  }
+
+  const entries = await fs.promises.readdir(charactersDirectory, { withFileTypes: true });
+
+  return entries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .filter((characterId) => fs.existsSync(path.join(charactersDirectory, characterId, "index.js")))
+    .sort((left, right) => left.localeCompare(right, undefined, { numeric: true, sensitivity: "base" }));
+}
+
+function resolveCharacterSourcePath(characterId) {
+  const safeCharacterId = safeFileName(characterId || "rine");
+  const characterSourcePath = path.resolve(root, "src", "characters", safeCharacterId, "index.ts");
+  const charactersRoot = path.resolve(root, "src", "characters");
+  const charactersRootWithSeparator = `${charactersRoot}${path.sep}`;
+
+  if (!characterSourcePath.startsWith(charactersRootWithSeparator)) {
+    throw new Error("invalid_character_id");
+  }
+
+  if (!fs.existsSync(characterSourcePath)) {
+    throw new Error("character_source_not_found");
+  }
+
+  return {
+    safeCharacterId,
+    characterSourcePath,
+  };
+}
+
+/**
+ * Resolves the built character module path when it exists for live dev-tool refreshes.
+ */
+function resolveCharacterBuildPath(safeCharacterId) {
+  const characterBuildPath = path.resolve(root, "dist", "characters", safeCharacterId, "index.js");
+  const charactersRoot = path.resolve(root, "dist", "characters");
+  const charactersRootWithSeparator = `${charactersRoot}${path.sep}`;
+
+  if (!characterBuildPath.startsWith(charactersRootWithSeparator)) {
+    throw new Error("invalid_character_id");
+  }
+
+  return fs.existsSync(characterBuildPath) ? characterBuildPath : null;
+}
+
+function findMatchingBrace(source, openBraceIndex) {
+  let depth = 0;
+  let quote = null;
+  let isEscaped = false;
+
+  for (let index = openBraceIndex; index < source.length; index += 1) {
+    const character = source[index];
+
+    if (quote) {
+      if (isEscaped) {
+        isEscaped = false;
+      } else if (character === "\\") {
+        isEscaped = true;
+      } else if (character === quote) {
+        quote = null;
+      }
+      continue;
+    }
+
+    if (character === "\"" || character === "'" || character === "`") {
+      quote = character;
+      continue;
+    }
+
+    if (character === "{") {
+      depth += 1;
+    } else if (character === "}") {
+      depth -= 1;
+
+      if (depth === 0) {
+        return index;
+      }
+    }
+  }
+
+  throw new Error("object_block_not_found");
+}
+
+function findPropertyBlock(source, containerStart, containerEnd, propertyName) {
+  const patterns = [
+    new RegExp(`(^|[\\s,])${propertyName}\\s*:\\s*{`, "m"),
+    new RegExp(`(^|[\\s,])["']${propertyName}["']\\s*:\\s*{`, "m"),
+  ];
+  const container = source.slice(containerStart, containerEnd);
+
+  for (const pattern of patterns) {
+    const match = pattern.exec(container);
+
+    if (!match?.index && match?.index !== 0) {
+      continue;
+    }
+
+    const openBraceIndex = containerStart + match.index + match[0].lastIndexOf("{");
+
+    return {
+      start: openBraceIndex,
+      end: findMatchingBrace(source, openBraceIndex),
+    };
+  }
+
+  return null;
+}
+
+function findObjectPropertyBlock(source, containerStart, containerEnd, propertyName) {
+  const escapedName = propertyName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const patterns = [
+    new RegExp(`(^|[\\s,])${escapedName}\\s*:\\s*{`, "m"),
+    new RegExp(`(^|[\\s,])["']${escapedName}["']\\s*:\\s*{`, "m"),
+  ];
+  const container = source.slice(containerStart, containerEnd);
+
+  for (const pattern of patterns) {
+    const match = pattern.exec(container);
+
+    if (!match?.index && match?.index !== 0) {
+      continue;
+    }
+
+    const propertyStart = containerStart + match.index + (match[1]?.length ?? 0);
+    const openBraceIndex = containerStart + match.index + match[0].lastIndexOf("{");
+
+    return {
+      propertyStart,
+      start: openBraceIndex,
+      end: findMatchingBrace(source, openBraceIndex),
+    };
+  }
+
+  return null;
+}
+
+function formatObjectLiteral(value, indent = 12) {
+  const indentation = " ".repeat(indent);
+  const rawJson = JSON.stringify(value, null, 2);
+
+  return rawJson
+    .split("\n")
+    .map((line, index) => (index === 0 ? line : `${indentation}${line}`))
+    .join("\n");
+}
+
+function insertPropertyBeforeClose(source, blockEnd, text) {
+  const prefix = source.slice(0, blockEnd).replace(/\s*$/, "");
+  const suffix = source.slice(blockEnd);
+  const needsComma = !prefix.endsWith("{") && !prefix.endsWith(",");
+
+  return `${prefix}${needsComma ? "," : ""}\n${text}\n${suffix}`;
+}
+
+/**
+ * Removes an object property block while keeping surrounding source formatting readable.
+ */
+function removeObjectProperty(source, propertyStart, propertyEnd) {
+  const lineStart = source.lastIndexOf("\n", propertyStart) + 1;
+  let removeEnd = propertyEnd + 1;
+
+  while (source[removeEnd] === " " || source[removeEnd] === "\t") {
+    removeEnd += 1;
+  }
+
+  if (source[removeEnd] === ",") {
+    removeEnd += 1;
+  }
+
+  while (source[removeEnd] === " " || source[removeEnd] === "\t") {
+    removeEnd += 1;
+  }
+
+  if (source.slice(removeEnd, removeEnd + 2) === "\r\n") {
+    removeEnd += 2;
+  } else if (source[removeEnd] === "\n") {
+    removeEnd += 1;
+  }
+
+  return `${source.slice(0, lineStart)}${source.slice(removeEnd)}`;
+}
+
+function upsertCharacterLayerSource(source, { surfaceId, layerId, layer }) {
+  const rootObjectStart = source.indexOf("assets:");
+
+  if (rootObjectStart === -1) {
+    throw new Error("character_assets_not_found");
+  }
+
+  const assetsBlock = findPropertyBlock(source, rootObjectStart, source.length, "assets");
+
+  if (!assetsBlock) {
+    throw new Error("character_assets_not_found");
+  }
+
+  const surfacesBlock = findPropertyBlock(source, assetsBlock.start, assetsBlock.end, "surfaces");
+
+  if (!surfacesBlock) {
+    throw new Error("character_surfaces_not_found");
+  }
+
+  const surfaceBlock = findObjectPropertyBlock(source, surfacesBlock.start, surfacesBlock.end, surfaceId);
+  const layerLiteral = formatObjectLiteral(layer, 12);
+  const layerProperty = `            ${JSON.stringify(layerId)}: ${layerLiteral},`;
+
+  if (!surfaceBlock) {
+    const surfaceLiteral = formatObjectLiteral({
+      id: surfaceId,
+      layers: {
+        [layerId]: layer,
+      },
+    }, 6);
+    const surfaceProperty = `      ${JSON.stringify(surfaceId)}: ${surfaceLiteral},`;
+
+    return insertPropertyBeforeClose(source, surfacesBlock.end, surfaceProperty);
+  }
+
+  const layersBlock = findPropertyBlock(source, surfaceBlock.start, surfaceBlock.end, "layers");
+
+  if (!layersBlock) {
+    const layersProperty = `          layers: {\n${layerProperty}\n          },`;
+
+    return insertPropertyBeforeClose(source, surfaceBlock.end, layersProperty);
+  }
+
+  const existingLayerBlock = findObjectPropertyBlock(source, layersBlock.start, layersBlock.end, layerId);
+
+  if (!existingLayerBlock) {
+    return insertPropertyBeforeClose(source, layersBlock.end, layerProperty);
+  }
+
+  const replacement = `${JSON.stringify(layerId)}: ${layerLiteral}`;
+
+  return `${source.slice(0, existingLayerBlock.propertyStart)}${replacement}${source.slice(existingLayerBlock.end + 1)}`;
+}
+
+/**
+ * Removes one layer definition from a character asset source string.
+ */
+function deleteCharacterLayerSource(source, { surfaceId, layerId }) {
+  const rootObjectStart = source.indexOf("assets:");
+
+  if (rootObjectStart === -1) {
+    throw new Error("character_assets_not_found");
+  }
+
+  const assetsBlock = findPropertyBlock(source, rootObjectStart, source.length, "assets");
+
+  if (!assetsBlock) {
+    throw new Error("character_assets_not_found");
+  }
+
+  const surfacesBlock = findPropertyBlock(source, assetsBlock.start, assetsBlock.end, "surfaces");
+
+  if (!surfacesBlock) {
+    throw new Error("character_surfaces_not_found");
+  }
+
+  const surfaceBlock = findObjectPropertyBlock(source, surfacesBlock.start, surfacesBlock.end, surfaceId);
+
+  if (!surfaceBlock) {
+    throw new Error("character_surface_not_found");
+  }
+
+  const layersBlock = findPropertyBlock(source, surfaceBlock.start, surfaceBlock.end, "layers");
+
+  if (!layersBlock) {
+    throw new Error("character_layers_not_found");
+  }
+
+  const existingLayerBlock = findObjectPropertyBlock(source, layersBlock.start, layersBlock.end, layerId);
+
+  if (!existingLayerBlock) {
+    throw new Error("character_layer_not_found");
+  }
+
+  return removeObjectProperty(source, existingLayerBlock.propertyStart, existingLayerBlock.end);
+}
+
+async function saveCharacterLayer(body) {
+  const { safeCharacterId, characterSourcePath } = resolveCharacterSourcePath(body.characterId);
+  const characterBuildPath = resolveCharacterBuildPath(safeCharacterId);
+  const layerSnippet = body.layer && typeof body.layer === "object" ? body.layer : {};
+  const surfaceId = String(layerSnippet.surfaceId ?? body.surfaceId ?? "").trim();
+  const layerId = String(layerSnippet.layerId ?? body.layerId ?? "").trim();
+  const layer = layerSnippet.layer ?? body.layerConfig;
+
+  if (!surfaceId || !layerId || !layer || typeof layer !== "object") {
+    throw new Error("invalid_character_layer");
+  }
+
+  const source = await fs.promises.readFile(characterSourcePath, "utf8");
+  const updatedSource = upsertCharacterLayerSource(source, { surfaceId, layerId, layer });
+
+  await fs.promises.writeFile(characterSourcePath, updatedSource, "utf8");
+
+  if (characterBuildPath) {
+    const buildSource = await fs.promises.readFile(characterBuildPath, "utf8");
+    const updatedBuildSource = upsertCharacterLayerSource(buildSource, { surfaceId, layerId, layer });
+
+    await fs.promises.writeFile(characterBuildPath, updatedBuildSource, "utf8");
+  }
+
+  return {
+    characterId: safeCharacterId,
+    path: path.relative(root, characterSourcePath).replaceAll(path.sep, "/"),
+    buildPath: characterBuildPath ? path.relative(root, characterBuildPath).replaceAll(path.sep, "/") : null,
+    surfaceId,
+    layerId,
+  };
+}
+
+/**
+ * Deletes one layer definition from the selected character source file.
+ */
+async function deleteCharacterLayer(body) {
+  const { safeCharacterId, characterSourcePath } = resolveCharacterSourcePath(body.characterId);
+  const characterBuildPath = resolveCharacterBuildPath(safeCharacterId);
+  const surfaceId = String(body.surfaceId ?? body.layer?.surfaceId ?? "").trim();
+  const layerId = String(body.layerId ?? body.layer?.layerId ?? "").trim();
+
+  if (!surfaceId || !layerId) {
+    throw new Error("invalid_character_layer");
+  }
+
+  const source = await fs.promises.readFile(characterSourcePath, "utf8");
+  const updatedSource = deleteCharacterLayerSource(source, { surfaceId, layerId });
+
+  await fs.promises.writeFile(characterSourcePath, updatedSource, "utf8");
+
+  if (characterBuildPath) {
+    const buildSource = await fs.promises.readFile(characterBuildPath, "utf8");
+    const updatedBuildSource = deleteCharacterLayerSource(buildSource, { surfaceId, layerId });
+
+    await fs.promises.writeFile(characterBuildPath, updatedBuildSource, "utf8");
+  }
+
+  return {
+    characterId: safeCharacterId,
+    path: path.relative(root, characterSourcePath).replaceAll(path.sep, "/"),
+    buildPath: characterBuildPath ? path.relative(root, characterBuildPath).replaceAll(path.sep, "/") : null,
+    surfaceId,
+    layerId,
+  };
+}
+
+function safeFileName(fileName) {
+  return String(fileName || "ghostnest-input.png").replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+function parseDataUrl(dataUrl) {
+  const match = /^data:([^;,]+);base64,(.+)$/.exec(String(dataUrl ?? ""));
+
+  if (!match) {
+    throw new Error("invalid_data_url");
+  }
+
+  return {
+    mimeType: match[1],
+    buffer: Buffer.from(match[2], "base64"),
+  };
+}
+
+function resolveProjectRelativePath(relativePath) {
+  const normalizedRelativePath = String(relativePath ?? "").trim();
+
+  if (!normalizedRelativePath || path.isAbsolute(normalizedRelativePath)) {
+    throw new Error("invalid_save_directory");
+  }
+
+  const resolvedPath = path.resolve(root, normalizedRelativePath);
+
+  if (resolvedPath !== root && !resolvedPath.startsWith(rootWithSeparator)) {
+    throw new Error("save_directory_outside_project");
+  }
+
+  return resolvedPath;
+}
+
+function parseImageDataUrl(dataUrl) {
+  const { buffer } = parseDataUrl(dataUrl);
+
+  return buffer;
+}
+
+async function saveGeneratedAssets(body) {
+  const targetDirectory = resolveProjectRelativePath(body.directory);
+  const images = Array.isArray(body.images) ? body.images : [];
+
+  if (images.length === 0 && !body.snippet) {
+    throw new Error("no_images_to_save");
+  }
+
+  await fs.promises.mkdir(targetDirectory, { recursive: true });
+
+  const saved = [];
+
+  for (const image of images) {
+    const fileName = safeFileName(image.fileName);
+    const filePath = path.join(targetDirectory, fileName);
+    await fs.promises.writeFile(filePath, parseImageDataUrl(image.dataUrl));
+    saved.push({
+      fileName,
+      path: path.relative(root, filePath).replaceAll(path.sep, "/"),
+    });
+  }
+
+  if (body.snippet) {
+    const snippetFileName = safeFileName(body.snippetFileName || "asset-generator-layer-snippet.json");
+    const snippetPath = path.join(targetDirectory, snippetFileName);
+    await fs.promises.writeFile(snippetPath, `${JSON.stringify(body.snippet, null, 2)}\n`, "utf8");
+    saved.push({
+      fileName: snippetFileName,
+      path: path.relative(root, snippetPath).replaceAll(path.sep, "/"),
+    });
+  }
+
+  return saved;
+}
+
+async function readComfyWorkflow(body) {
+  const selectedWorkflowPath = findExistingWorkflowPath(body);
+
+  if (!selectedWorkflowPath) {
+    throw new Error("workflow_not_configured");
+  }
+
+  const rawWorkflow = await fs.promises.readFile(selectedWorkflowPath.resolvedWorkflowPath, "utf8");
+  const workflow = JSON.parse(rawWorkflow);
+
+  if (workflow?._ghostNestTemplate) {
+    throw new Error("workflow_template_not_configured");
+  }
+
+  return workflow;
+}
+
+async function fetchWorkflowFromUrl(workflowUrl) {
+  const response = await fetch(workflowUrl, {
+    method: "GET",
+    signal: AbortSignal.timeout(10000),
+  });
+
+  if (!response.ok) {
+    throw new Error(`workflow_url_failed:${response.status}`);
+  }
+
+  return response.json();
+}
+
+async function resolveComfyWorkflow(body) {
+  const source = body.workflowSource ?? { mode: "serverFile" };
+
+  if (source.mode === "upload") {
+    if (!source.workflow || typeof source.workflow !== "object") {
+      throw new Error("workflow_upload_required");
+    }
+
+    return source.workflow;
+  }
+
+  if (source.mode === "url") {
+    if (!source.url) {
+      throw new Error("workflow_url_required");
+    }
+
+    return fetchWorkflowFromUrl(source.url);
+  }
+
+  return readComfyWorkflow(body);
+}
+
+function isServerFileWorkflowMode(body) {
+  return (body.workflowSource?.mode ?? "serverFile") === "serverFile";
+}
+
+function replaceWorkflowPlaceholders(value, replacements) {
+  if (typeof value === "string") {
+    return Object.entries(replacements).reduce(
+      (currentValue, [key, replacement]) => currentValue.replaceAll(`{{${key}}}`, replacement),
+      value,
+    );
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => replaceWorkflowPlaceholders(item, replacements));
+  }
+
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, replaceWorkflowPlaceholders(item, replacements)]),
+    );
+  }
+
+  return value;
+}
+
+function applyCommonWorkflowInputs(workflow, replacements) {
+  const generationSettings = replacements.generation_settings
+    && typeof replacements.generation_settings === "object"
+    ? replacements.generation_settings
+    : {};
+
+  Object.values(workflow).forEach((node) => {
+    if (!node || typeof node !== "object" || !node.inputs) {
+      return;
+    }
+
+    if (node.class_type === "LoadImage" && !node.inputs.image) {
+      node.inputs.image = replacements.input_image;
+    }
+
+    if (node.class_type === "SaveImage" && typeof node.inputs.filename_prefix === "string") {
+      node.inputs.filename_prefix = replacements.filename_prefix;
+    }
+
+    if (node.class_type === "CheckpointLoaderSimple" && replacements.checkpoint_name) {
+      node.inputs.ckpt_name = replacements.checkpoint_name;
+    }
+
+    if (node.class_type === "KSampler") {
+      if (typeof node.inputs.seed === "number") {
+        node.inputs.seed = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER);
+      }
+
+      if (Number.isFinite(Number(generationSettings.denoise))) {
+        node.inputs.denoise = Number(generationSettings.denoise);
+      }
+
+      if (Number.isFinite(Number(generationSettings.cfg))) {
+        node.inputs.cfg = Number(generationSettings.cfg);
+      }
+
+      if (Number.isFinite(Number(generationSettings.steps))) {
+        node.inputs.steps = Math.round(Number(generationSettings.steps));
+      }
+    }
+  });
+
+  return workflow;
+}
+
+/**
+ * Creates a fresh workflow copy for each output slot.
+ */
+function cloneWorkflow(workflow) {
+  return JSON.parse(JSON.stringify(workflow));
+}
+
+/**
+ * Adds the target output name to the shared recipe prompt.
+ */
+function buildOutputPrompt(body, outputName) {
+  const basePrompt = String(body.prompt ?? "").trim();
+  const outputPrompts = body.outputPrompts && typeof body.outputPrompts === "object"
+    ? body.outputPrompts
+    : {};
+  const outputPrompt = String(outputPrompts[outputName] ?? outputName ?? "").replaceAll("_", " ");
+
+  return [basePrompt, outputPrompt].filter(Boolean).join(", ");
+}
+
+/**
+ * Applies GhostNest placeholders and common ComfyUI inputs.
+ */
+function buildComfyPrompt(workflow, replacements) {
+  return applyCommonWorkflowInputs(
+    replaceWorkflowPlaceholders(cloneWorkflow(workflow), replacements),
+    replacements,
+  );
+}
+
+/**
+ * Normalizes the optional target region used by crop and part-layer workflows.
+ */
+function getTargetRegion(body) {
+  const region = body.targetRegion && typeof body.targetRegion === "object"
+    ? body.targetRegion
+    : {};
+
+  return {
+    x: Number(region.x ?? 0),
+    y: Number(region.y ?? 0),
+    width: Number(region.width ?? 100),
+    height: Number(region.height ?? 100),
+    unit: region.unit === "percent" ? "percent" : "percent",
+  };
+}
+
+async function uploadImageToComfyUi(body) {
+  if (!body.croppedBaseImageDataUrl) {
+    throw new Error("cropped_base_image_required");
+  }
+
+  const sourceFileName = body.croppedBaseImageDataUrl
+    ? `${path.parse(safeFileName(body.baseImageFileName || body.characterId || "character")).name}_crop.png`
+    : body.baseImageFileName || `${body.characterId || "character"}_base.png`;
+
+  return uploadDataUrlImageToComfyUi(
+    body.croppedBaseImageDataUrl || body.baseImageDataUrl,
+    sourceFileName,
+  );
+}
+
+/**
+ * Uploads the optional reference image to ComfyUI when one is provided.
+ */
+async function uploadReferenceImageToComfyUi(body) {
+  if (!body.referenceImageDataUrl) {
+    return null;
+  }
+
+  return uploadDataUrlImageToComfyUi(
+    body.referenceImageDataUrl,
+    body.referenceImageFileName || `${body.characterId || "character"}_reference.png`,
+  );
+}
+
+/**
+ * Uploads the optional inpaint mask image to ComfyUI when one is provided.
+ */
+async function uploadMaskImageToComfyUi(body) {
+  if (!body.maskImageDataUrl) {
+    return null;
+  }
+
+  const maskFileName = `${path.parse(safeFileName(body.baseImageFileName || body.characterId || "character")).name}_mask.png`;
+
+  return uploadDataUrlImageToComfyUi(
+    body.maskImageDataUrl,
+    maskFileName,
+  );
+}
+
+/**
+ * Uploads a data URL image to the ComfyUI input directory.
+ */
+async function uploadDataUrlImageToComfyUi(dataUrl, sourceFileName) {
+  const { mimeType, buffer } = parseDataUrl(dataUrl);
+  const fileName = safeFileName(sourceFileName);
+  const formData = new FormData();
+
+  formData.append("image", new Blob([buffer], { type: mimeType }), fileName);
+  formData.append("type", "input");
+  formData.append("overwrite", "true");
+
+  const response = await fetch(`${getComfyUiUrl()}/upload/image`, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    throw new Error(`upload_failed:${response.status}`);
+  }
+
+  return response.json();
+}
+
+async function queueComfyWorkflow(prompt) {
+  const response = await fetch(`${getComfyUiUrl()}/prompt`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      client_id: `ghost-nest-${Date.now()}`,
+      prompt,
+    }),
+  });
+  const result = await response.json();
+
+  if (!response.ok) {
+    const detail = result?.error?.message ?? result?.error ?? `prompt_failed:${response.status}`;
+    throw new Error(String(detail));
+  }
+
+  return result;
+}
+
+async function getComfyHistory(promptId) {
+  const response = await fetch(`${getComfyUiUrl()}/history/${encodeURIComponent(promptId)}`);
+
+  if (!response.ok) {
+    throw new Error(`history_failed:${response.status}`);
+  }
+
+  return response.json();
+}
+
+async function waitForComfyHistory(promptId) {
+  const startedAt = Date.now();
+  const timeoutMs = 120000;
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const history = await getComfyHistory(promptId);
+
+    if (history?.[promptId]) {
+      return history;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+  }
+
+  throw new Error("generation_timeout");
+}
+
+function extractHistoryImages(history, promptId) {
+  const outputs = history?.[promptId]?.outputs ?? {};
+
+  return Object.values(outputs).flatMap((output) => output?.images ?? []);
+}
+
+async function fetchComfyImage(image, preferredFileName) {
+  const params = new URLSearchParams({
+    filename: image.filename,
+    subfolder: image.subfolder ?? "",
+    type: image.type ?? "output",
+  });
+  const response = await fetch(`${getComfyUiUrl()}/view?${params.toString()}`);
+
+  if (!response.ok) {
+    throw new Error(`view_failed:${response.status}`);
+  }
+
+  const contentType = response.headers.get("content-type") ?? "image/png";
+  const bytes = Buffer.from(await response.arrayBuffer());
+
+  return {
+    fileName: preferredFileName ?? image.filename,
+    dataUrl: `data:${contentType};base64,${bytes.toString("base64")}`,
+    source: image,
+  };
+}
+
+async function generateWithComfyUi(body) {
+  if (!body.baseImageDataUrl) {
+    throw new Error("base_image_required");
+  }
+
+  const uploadedImage = await uploadImageToComfyUi(body);
+  const uploadedReferenceImage = await uploadReferenceImageToComfyUi(body);
+  const uploadedMaskImage = await uploadMaskImageToComfyUi(body);
+  const workflow = await resolveComfyWorkflow(body);
+  const targetRegion = getTargetRegion(body);
+  const croppedBaseImage = body.croppedBaseImage && typeof body.croppedBaseImage === "object"
+    ? body.croppedBaseImage
+    : null;
+  const outputNames = Array.isArray(body.outputNames) && body.outputNames.length > 0
+    ? body.outputNames
+    : ["generated"];
+  const generated = [];
+  const promptIds = [];
+
+  for (const outputName of outputNames) {
+    const safeOutputName = safeFileName(outputName);
+    const expectedFileName = `${body.outputPrefix || body.characterId || "ghostnest"}_${safeOutputName}.png`;
+    const filenamePrefix = safeFileName(`${body.outputPrefix || body.characterId || "ghostnest"}_${safeOutputName}`);
+    const replacements = {
+      input_image: uploadedImage.name ?? uploadedImage.filename ?? safeFileName(body.baseImageFileName),
+      reference_image: uploadedReferenceImage?.name
+        ?? uploadedReferenceImage?.filename
+        ?? uploadedImage.name
+        ?? uploadedImage.filename
+        ?? safeFileName(body.baseImageFileName),
+      reference_prompt: uploadedReferenceImage
+        ? "use the reference image as guidance for the requested expression, mouth shape, eye shape, or pose"
+        : "use text prompt only; no reference image was provided",
+      mask_image: uploadedMaskImage?.name
+        ?? uploadedMaskImage?.filename
+        ?? "",
+      mask_prompt: uploadedMaskImage
+        ? "only redraw the white area of the provided mask image; preserve black masked surroundings"
+        : "no mask image was provided",
+      target_region: JSON.stringify(targetRegion),
+      target_region_x: String(targetRegion.x),
+      target_region_y: String(targetRegion.y),
+      target_region_width: String(targetRegion.width),
+      target_region_height: String(targetRegion.height),
+      output_name: String(outputName ?? ""),
+      prompt: buildOutputPrompt(body, outputName),
+      negative_prompt: String(body.negativePrompt ?? ""),
+      filename_prefix: filenamePrefix,
+      recipe_id: String(body.recipeId ?? ""),
+      character_id: String(body.characterId ?? ""),
+      checkpoint_name: String(body.checkpointName ?? "animagine-xl-4.0-opt.safetensors"),
+      edit_scope: String(body.editScope ?? ""),
+      model_profile: String(body.modelProfile ?? ""),
+      generation_settings: body.generationSettings ?? {},
+    };
+    const prompt = buildComfyPrompt(workflow, replacements);
+    const queued = await queueComfyWorkflow(prompt);
+    const history = await waitForComfyHistory(queued.prompt_id);
+    const historyImages = extractHistoryImages(history, queued.prompt_id);
+    const images = await Promise.all(
+      historyImages.map((image, index) => fetchComfyImage(
+        image,
+        index === 0 ? expectedFileName : `${filenamePrefix}_${index + 1}.png`,
+      )),
+    );
+
+    promptIds.push(queued.prompt_id);
+    generated.push(...images);
+  }
+
+  return {
+    promptId: promptIds[0],
+    promptIds,
+    images: generated,
+    uploadedImage,
+    uploadedReferenceImage,
+    uploadedMaskImage,
+    targetRegion,
+    croppedBaseImage,
+  };
+}
+
+async function handleGenerateLayerPart(request, response) {
+  if (!isAssetGeneratorBridgeEnabled()) {
+    sendAssetGeneratorBridgeDisabled(response);
+    return true;
+  }
+
+  if (request.method !== "POST") {
+    sendJson(response, 405, { ok: false, error: "method_not_allowed" });
+    return true;
+  }
+
+  let body;
+
+  try {
+    body = await readRequestJson(request);
+  } catch (error) {
+    sendJson(response, 400, { ok: false, error: "invalid_json" });
+    return true;
+  }
+
+  try {
+    const comfyStatus = await checkComfyUiStatus();
+    const workflowPathInfo = createWorkflowPathInfo(body);
+    const comfyUiUrl = getComfyUiUrl();
+
+    if (isServerFileWorkflowMode(body) && !workflowPathInfo.selectedResolvedWorkflowPath) {
+      sendJson(response, 501, {
+        ok: false,
+        error: "workflow_not_configured",
+        message: "ComfyUI is reachable, but no API workflow JSON was found from workflowPath or the default fallback path.",
+        bridge: {
+          comfyUiUrl,
+          comfyStatus,
+          ...workflowPathInfo,
+        },
+        request: {
+          recipeId: body.recipeId,
+          characterId: body.characterId,
+          outputNames: body.outputNames,
+          hasBaseImage: Boolean(body.baseImageDataUrl),
+        },
+      });
+      return true;
+    }
+
+    const generation = await generateWithComfyUi(body);
+
+    sendJson(response, 200, {
+      ok: true,
+      message: "Generation completed.",
+      bridge: {
+        comfyUiUrl,
+        comfyStatus,
+        ...workflowPathInfo,
+      },
+      generation,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "generation_failed";
+    const statusCode = [
+      "base_image_required",
+      "cropped_base_image_required",
+      "invalid_data_url",
+    ].includes(message) ? 400 : 503;
+    const isComfyUnavailable = message === "fetch failed";
+    const isWorkflowTemplate = message === "workflow_template_not_configured";
+    const workflowPathInfo = createWorkflowPathInfo(body);
+    const comfyUiUrl = getComfyUiUrl();
+
+    sendJson(response, isWorkflowTemplate ? 501 : statusCode, {
+      ok: false,
+      error: isComfyUnavailable ? "comfyui_unavailable" : message,
+      message: message === "base_image_required"
+        ? "Select a base image before generating."
+        : message === "cropped_base_image_required"
+          ? "Layer part generation requires a cropped part image. Rebuild and refresh the asset generator page."
+          : isComfyUnavailable
+            ? "ComfyUI is not reachable from the GhostNest dev server."
+            : isWorkflowTemplate
+              ? "A placeholder workflow file was found. Replace it with a ComfyUI API workflow JSON."
+              : "ComfyUI generation failed from the GhostNest dev server.",
+      bridge: {
+        comfyUiUrl,
+        ...workflowPathInfo,
+      },
+    });
+  }
+
+  return true;
+}
+
+async function handleComfyModels(request, response) {
+  if (!isAssetGeneratorBridgeEnabled()) {
+    sendAssetGeneratorBridgeDisabled(response);
+    return true;
+  }
+
+  if (request.method !== "GET") {
+    sendJson(response, 405, { ok: false, error: "method_not_allowed" });
+    return true;
+  }
+
+  try {
+    sendJson(response, 200, {
+      ok: true,
+      models: await getComfyModels(),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "models_failed";
+
+    sendJson(response, 503, {
+      ok: false,
+      error: message === "fetch failed" ? "comfyui_unavailable" : message,
+      message: message === "fetch failed"
+        ? "ComfyUI is not reachable from the GhostNest dev server."
+        : "ComfyUI model list could not be loaded.",
+    });
+  }
+
+  return true;
+}
+
+async function handleCharacterAssets(request, response) {
+  if (!isAssetGeneratorEnabled()) {
+    sendJson(response, 404, {
+      ok: false,
+      error: "extension_not_enabled",
+      message: "Asset Generator extension is not enabled in ghost-nest.extensions.json.",
+    });
+    return true;
+  }
+
+  if (request.method !== "GET") {
+    sendJson(response, 405, { ok: false, error: "method_not_allowed" });
+    return true;
+  }
+
+  try {
+    const requestUrl = new URL(request.url, `http://127.0.0.1:${port}`);
+    const characterId = requestUrl.searchParams.get("characterId") || "rine";
+
+    sendJson(response, 200, {
+      ok: true,
+      ...await readCharacterAssets(characterId),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "character_assets_failed";
+
+    sendJson(response, 404, {
+      ok: false,
+      error: message,
+      message: message === "character_dist_not_found"
+        ? "Character build output was not found. Run npm run build before loading existing layer settings."
+        : "Character layer settings could not be loaded.",
+    });
+  }
+
+  return true;
+}
+
+async function handleCharacters(request, response) {
+  if (!isAssetGeneratorEnabled()) {
+    sendJson(response, 404, {
+      ok: false,
+      error: "extension_not_enabled",
+      message: "Asset Generator extension is not enabled in ghost-nest.extensions.json.",
+    });
+    return true;
+  }
+
+  if (request.method !== "GET") {
+    sendJson(response, 405, { ok: false, error: "method_not_allowed" });
+    return true;
+  }
+
+  try {
+    sendJson(response, 200, {
+      ok: true,
+      characters: await readCharacterList(),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "characters_failed";
+
+    sendJson(response, 404, {
+      ok: false,
+      error: message,
+      message: message === "character_dist_not_found"
+        ? "Character build output was not found. Run npm run build before loading character list."
+        : "Character list could not be loaded.",
+    });
+  }
+
+  return true;
+}
+
+async function handleSaveCharacterLayer(request, response) {
+  if (!isAssetGeneratorEnabled()) {
+    sendJson(response, 404, {
+      ok: false,
+      error: "extension_not_enabled",
+      message: "Asset Generator extension is not enabled in ghost-nest.extensions.json.",
+    });
+    return true;
+  }
+
+  if (request.method !== "POST") {
+    sendJson(response, 405, { ok: false, error: "method_not_allowed" });
+    return true;
+  }
+
+  try {
+    const body = await readRequestJson(request);
+    const saved = await saveCharacterLayer(body);
+
+    sendJson(response, 200, {
+      ok: true,
+      message: "Character layer saved.",
+      saved,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "save_character_layer_failed";
+    const statusCode = [
+      "invalid_json",
+      "invalid_character_id",
+      "character_source_not_found",
+      "invalid_character_layer",
+      "character_assets_not_found",
+      "character_surfaces_not_found",
+      "object_block_not_found",
+    ].includes(message) ? 400 : 500;
+
+    sendJson(response, statusCode, {
+      ok: false,
+      error: message,
+      message: "Character layer could not be saved.",
+    });
+  }
+
+  return true;
+}
+
+/**
+ * Handles character layer delete requests for the dev asset tool.
+ */
+async function handleDeleteCharacterLayer(request, response) {
+  if (!isAssetGeneratorEnabled()) {
+    sendJson(response, 404, {
+      ok: false,
+      error: "extension_not_enabled",
+      message: "Asset Generator extension is not enabled in ghost-nest.extensions.json.",
+    });
+    return true;
+  }
+
+  if (request.method !== "POST") {
+    sendJson(response, 405, { ok: false, error: "method_not_allowed" });
+    return true;
+  }
+
+  try {
+    const body = await readRequestJson(request);
+    const deleted = await deleteCharacterLayer(body);
+
+    sendJson(response, 200, {
+      ok: true,
+      message: "Character layer deleted.",
+      deleted,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "delete_character_layer_failed";
+    const statusCode = [
+      "invalid_json",
+      "invalid_character_id",
+      "character_source_not_found",
+      "invalid_character_layer",
+      "character_assets_not_found",
+      "character_surfaces_not_found",
+      "character_surface_not_found",
+      "character_layers_not_found",
+      "character_layer_not_found",
+      "object_block_not_found",
+    ].includes(message) ? 400 : 500;
+
+    sendJson(response, statusCode, {
+      ok: false,
+      error: message,
+      message: "Character layer could not be deleted.",
+    });
+  }
+
+  return true;
+}
+
+async function handleSaveGeneratedAssets(request, response) {
+  if (!isAssetGeneratorBridgeEnabled()) {
+    sendAssetGeneratorBridgeDisabled(response);
+    return true;
+  }
+
+  if (request.method !== "POST") {
+    sendJson(response, 405, { ok: false, error: "method_not_allowed" });
+    return true;
+  }
+
+  try {
+    const body = await readRequestJson(request);
+    const saved = await saveGeneratedAssets(body);
+
+    sendJson(response, 200, {
+      ok: true,
+      message: "Generated assets saved.",
+      saved,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "save_failed";
+    const statusCode = [
+      "invalid_json",
+      "invalid_save_directory",
+      "save_directory_outside_project",
+      "no_images_to_save",
+      "invalid_data_url",
+    ].includes(message) ? 400 : 500;
+
+    sendJson(response, statusCode, {
+      ok: false,
+      error: message,
+      message: "Generated assets could not be saved.",
+    });
+  }
+
+  return true;
+}
+
+async function handleApiRequest(request, response) {
+  const pathname = new URL(request.url, `http://127.0.0.1:${port}`).pathname;
+
+  if (pathname === "/api/devtools/generate-layer-part") {
+    return handleGenerateLayerPart(request, response);
+  }
+
+  if (pathname === "/api/devtools/comfy-models") {
+    return handleComfyModels(request, response);
+  }
+
+  if (pathname === "/api/devtools/character-assets") {
+    return handleCharacterAssets(request, response);
+  }
+
+  if (pathname === "/api/devtools/characters") {
+    return handleCharacters(request, response);
+  }
+
+  if (pathname === "/api/devtools/save-character-layer") {
+    return handleSaveCharacterLayer(request, response);
+  }
+
+  if (pathname === "/api/devtools/delete-character-layer") {
+    return handleDeleteCharacterLayer(request, response);
+  }
+
+  if (pathname === "/api/devtools/save-generated-assets") {
+    return handleSaveGeneratedAssets(request, response);
+  }
+
+  return false;
+}
+
+const server = http.createServer(async (request, response) => {
+  if (await handleApiRequest(request, response)) {
+    return;
+  }
+
   const filePath = resolveRequestPath(request.url);
 
   if (!filePath) {
@@ -49,4 +1476,9 @@ const server = http.createServer((request, response) => {
 
 server.listen(port, "127.0.0.1", () => {
   console.log(`GhostNest runtime is running at http://127.0.0.1:${port}`);
+  console.log(`GhostNest Asset Generator bridge enabled: ${isAssetGeneratorBridgeEnabled()}`);
+  console.log(`GhostNest ComfyUI bridge target: ${getComfyUiUrl()}`);
+  console.log(`GhostNest ComfyUI workflow path: ${getConfiguredWorkflowPath()}`);
+  console.log(`GhostNest ComfyUI resolved workflow path: ${getResolvedWorkflowPath()}`);
+  console.log(`GhostNest ComfyUI selected workflow path: ${findExistingWorkflowPath()?.resolvedWorkflowPath ?? "not found"}`);
 });

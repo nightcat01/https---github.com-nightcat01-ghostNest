@@ -1,0 +1,42 @@
+{
+  "layer": {
+    "surfaceId": "0",
+    "layerId": "eyes",
+    "layer": {
+      "frames": [
+        "./src/characters/rine/generated/rine_eye_close.png"
+      ],
+      "intervalMs": 140,
+      "coversBase": true,
+      "placement": {
+        "x": 38.6,
+        "y": 13,
+        "width": 13.7,
+        "height": 5,
+        "unit": "percent"
+      }
+    }
+  },
+  "manifest": {
+    "surfaces": {
+      "0": {
+        "layers": {
+          "eyes": {
+            "frames": [
+              "./src/characters/rine/generated/rine_eye_close.png"
+            ],
+            "intervalMs": 140,
+            "coversBase": true,
+            "placement": {
+              "x": 38.6,
+              "y": 13,
+              "width": 13.7,
+              "height": 5,
+              "unit": "percent"
+            }
+          }
+        }
+      }
+    }
+  }
+}

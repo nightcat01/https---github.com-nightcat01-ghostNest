@@ -1,0 +1,144 @@
+{
+  "1": {
+    "inputs": {
+      "ckpt_name": "{{checkpoint_name}}"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "Load Checkpoint"
+    }
+  },
+  "2": {
+    "inputs": {
+      "image": "{{input_image}}"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Load Context Crop"
+    }
+  },
+  "3": {
+    "inputs": {
+      "image": "{{mask_image}}",
+      "channel": "red"
+    },
+    "class_type": "LoadImageMask",
+    "_meta": {
+      "title": "Load Target Mask"
+    }
+  },
+  "4": {
+    "inputs": {
+      "text": "{{prompt}}, {{reference_prompt}}, conservative inpaint edit, redraw only the masked facial feature area, keep the same character identity, preserve unmasked pixels exactly, preserve background and clothing, matching anime line art, matching color and lighting, small localized edit",
+      "clip": [
+        "1",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Positive Prompt"
+    }
+  },
+  "5": {
+    "inputs": {
+      "text": "{{negative_prompt}}, creative reinterpretation, abstract colors, full image repaint, global retouching, changed non-target areas, changed hairstyle, changed outfit, different character, low quality, blurry, deformed, bad anatomy",
+      "clip": [
+        "1",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Negative Prompt"
+    }
+  },
+  "6": {
+    "inputs": {
+      "positive": [
+        "4",
+        0
+      ],
+      "negative": [
+        "5",
+        0
+      ],
+      "vae": [
+        "1",
+        2
+      ],
+      "pixels": [
+        "2",
+        0
+      ],
+      "mask": [
+        "3",
+        0
+      ],
+      "noise_mask": true
+    },
+    "class_type": "InpaintModelConditioning",
+    "_meta": {
+      "title": "Inpaint Conditioning"
+    }
+  },
+  "7": {
+    "inputs": {
+      "seed": 0,
+      "steps": 18,
+      "cfg": 4.5,
+      "sampler_name": "dpmpp_2m",
+      "scheduler": "karras",
+      "denoise": 0.28,
+      "model": [
+        "1",
+        0
+      ],
+      "positive": [
+        "6",
+        0
+      ],
+      "negative": [
+        "6",
+        1
+      ],
+      "latent_image": [
+        "6",
+        2
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "Generate Masked Variant"
+    }
+  },
+  "8": {
+    "inputs": {
+      "samples": [
+        "7",
+        0
+      ],
+      "vae": [
+        "1",
+        2
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "Decode Image"
+    }
+  },
+  "9": {
+    "inputs": {
+      "filename_prefix": "{{filename_prefix}}",
+      "images": [
+        "8",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Result"
+    }
+  }
+}

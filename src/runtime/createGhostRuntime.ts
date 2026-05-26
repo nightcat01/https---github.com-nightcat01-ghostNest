@@ -224,6 +224,7 @@ export function createGhostRuntime(options: GhostRuntimeOptions): GhostRuntime {
     renderSpeech,
     renderPreviewSpeech,
     renderCharacterState,
+    applySurface: characterRenderer.applySurface,
     setLayerAnimationActive: characterRenderer.setLayerAnimationActive,
     addLog: diagnostics.addLog,
     touchInteraction,

@@ -9,6 +9,11 @@ import type {
   SpeechTypingOptions,
 } from "../core/types.js";
 import { createDemoPlugins } from "../demo/demoPlugins.js";
+import { assetGeneratorExtensionConfig } from "../plugins/assetGenerator/index.js";
+
+export const enabledExtensions = {
+  "asset-generator": assetGeneratorExtensionConfig,
+} as const;
 
 /**
  * Registers feature providers that GhostNest can call through mapped actions.

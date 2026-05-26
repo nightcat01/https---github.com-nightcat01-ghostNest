@@ -1,10 +1,12 @@
 import type { ManagementMenuItem } from "../../core/types.js";
+import { createAssetGeneratorMenuItem } from "../../plugins/assetGenerator/index.js";
+import { enabledExtensions } from "../../ghost/nanika.config.js";
 
 /**
  * Creates demo-only developer tools that should not be mixed into the normal user menu by default.
  */
 export function createDeveloperMenuItems(): ManagementMenuItem[] {
-  return [
+  const menuItems: ManagementMenuItem[] = [
     {
       id: "system-info",
       label: "시스템 정보",
@@ -54,4 +56,10 @@ export function createDeveloperMenuItems(): ManagementMenuItem[] {
       ],
     },
   ];
+
+  if (enabledExtensions["asset-generator"]?.enabled) {
+    menuItems.push(createAssetGeneratorMenuItem());
+  }
+
+  return menuItems;
 }

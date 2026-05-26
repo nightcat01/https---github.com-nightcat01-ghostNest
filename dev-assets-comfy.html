@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GhostNest Comfy Tool</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="asset-lab-shell">
+      <header class="asset-lab-header">
+        <div>
+          <p class="eyebrow">GhostNest Asset Tools</p>
+          <h1>Comfy 생성</h1>
+        </div>
+        <a class="asset-lab-back" href="./dev-assets.html">도구 홈</a>
+      </header>
+
+      <nav class="asset-tool-nav" aria-label="Asset tool pages">
+        <a href="./dev-assets-crop.html">Crop 도구</a>
+        <a aria-current="page" href="./dev-assets-comfy.html">Comfy 생성</a>
+        <a href="./dev-assets-layer.html">레이어 설정</a>
+      </nav>
+
+      <section class="asset-lab-grid" aria-label="Comfy generation tool">
+        <section class="asset-lab-panel">
+          <div class="asset-lab-section">
+            <h2>생성 입력</h2>
+            <div class="asset-lab-field-grid">
+              <label>
+                생성할 파츠
+                <select id="partRecipeSelect" name="partRecipe">
+                  <option value="eyeBlink">눈 깜빡임: 감은 눈</option>
+                  <option value="mouthShapes">입 모양: 닫힘, 작게 열림, 열림</option>
+                  <option value="expressionSet">표정 세트: 기쁨, 생각, 놀람</option>
+                </select>
+              </label>
+              <label>
+                파일 접두어
+                <input id="outputPrefixInput" type="text" value="rine" autocomplete="off" />
+              </label>
+            </div>
+            <label>
+              기준 이미지
+              <input id="baseImageInput" type="file" accept="image/*" />
+            </label>
+            <div class="asset-lab-region-grid">
+              <label>X <input id="targetRegionXInput" type="number" min="0" max="100" step="1" /></label>
+              <label>Y <input id="targetRegionYInput" type="number" min="0" max="100" step="1" /></label>
+              <label>W <input id="targetRegionWidthInput" type="number" min="1" max="100" step="1" /></label>
+              <label>H <input id="targetRegionHeightInput" type="number" min="1" max="100" step="1" /></label>
+            </div>
+          </div>
+          <div class="asset-lab-section">
+            <h2>Comfy 설정</h2>
+            <label>
+              체크포인트 파일명
+              <input id="checkpointNameInput" type="text" value="animagine-xl-4.0-opt.safetensors" autocomplete="off" />
+            </label>
+            <label>
+              생성 프롬프트
+              <textarea id="promptInput" rows="5"></textarea>
+            </label>
+            <label>
+              네거티브 프롬프트
+              <textarea id="negativePromptInput" rows="3"></textarea>
+            </label>
+            <div class="asset-lab-actions">
+              <button type="button" id="generateButton">Comfy 생성</button>
+              <button type="button" id="downloadGeneratedButton">결과 다운로드</button>
+            </div>
+            <p class="asset-lab-status" id="comfyStatus" role="status">ComfyUI bridge로 생성할 준비가 됐어요.</p>
+          </div>
+        </section>
+
+        <section class="asset-lab-panel asset-lab-output-panel">
+          <div class="asset-lab-output-header">
+            <h2>생성 결과</h2>
+          </div>
+          <div class="asset-comfy-result-grid" id="comfyPreview" aria-live="polite"></div>
+        </section>
+      </section>
+    </main>
+    <script type="module" src="./dist/devtools/assetComfy.js"></script>
+  </body>
+</html>

@@ -1,0 +1,136 @@
+{
+  "1": {
+    "inputs": {
+      "ckpt_name": "{{checkpoint_name}}"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "Load SDXL Checkpoint"
+    }
+  },
+  "2": {
+    "inputs": {
+      "image": "{{input_image}}"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Load Context Crop"
+    }
+  },
+  "3": {
+    "inputs": {
+      "image": "{{mask_image}}",
+      "channel": "red"
+    },
+    "class_type": "LoadImageMask",
+    "_meta": {
+      "title": "Load Target Mask"
+    }
+  },
+  "4": {
+    "inputs": {
+      "text": "{{prompt}}, {{reference_prompt}}, localized img2img inpaint edit, same character, preserve unmasked area, matching anime line art, matching color and lighting",
+      "clip": [
+        "1",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Positive Prompt"
+    }
+  },
+  "5": {
+    "inputs": {
+      "text": "{{negative_prompt}}, full image repaint, changed non-target areas, different character, low quality, blurry, deformed",
+      "clip": [
+        "1",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Negative Prompt"
+    }
+  },
+  "6": {
+    "inputs": {
+      "pixels": [
+        "2",
+        0
+      ],
+      "vae": [
+        "1",
+        2
+      ],
+      "mask": [
+        "3",
+        0
+      ],
+      "grow_mask_by": 4
+    },
+    "class_type": "VAEEncodeForInpaint",
+    "_meta": {
+      "title": "VAE Encode For Inpaint"
+    }
+  },
+  "7": {
+    "inputs": {
+      "seed": 0,
+      "steps": 18,
+      "cfg": 4.5,
+      "sampler_name": "dpmpp_2m",
+      "scheduler": "karras",
+      "denoise": 0.22,
+      "model": [
+        "1",
+        0
+      ],
+      "positive": [
+        "4",
+        0
+      ],
+      "negative": [
+        "5",
+        0
+      ],
+      "latent_image": [
+        "6",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "Generate Masked Variant"
+    }
+  },
+  "8": {
+    "inputs": {
+      "samples": [
+        "7",
+        0
+      ],
+      "vae": [
+        "1",
+        2
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "Decode Image"
+    }
+  },
+  "9": {
+    "inputs": {
+      "filename_prefix": "{{filename_prefix}}",
+      "images": [
+        "8",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Result"
+    }
+  }
+}
