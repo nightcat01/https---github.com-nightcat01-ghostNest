@@ -1,31 +1,20 @@
 import { requireElement } from "./assetShared.js";
+import {
+  AssetFile,
+  fetchAssetFiles,
+  fetchCharacterAssets,
+  readApiJson,
+} from "./assetApi.js";
+import { populateCharacterSelect } from "./assetCharacterSelect.js";
+import {
+  CharacterAssetSaveKind,
+  createCharacterAssetSaveDirectory,
+  createSavedAssetPaths,
+  readImageFiles,
+  saveUploadedAssetFiles,
+} from "./assetUpload.js";
+import { createAssetOptionLabel, filterAssetFiles } from "./assetSelect.js";
 
-type CharacterListResponse = {
-  ok?: boolean;
-  error?: string;
-  message?: string;
-  characters?: string[];
-};
-type AssetFile = {
-  fileName: string;
-  kind: "base" | "part" | "scene" | "asset";
-  path: string;
-  scope?: "character" | "common";
-};
-type AssetFilesResponse = {
-  ok?: boolean;
-  error?: string;
-  message?: string;
-  files?: AssetFile[];
-};
-type CharacterAssetsResponse = {
-  ok?: boolean;
-  error?: string;
-  message?: string;
-  assets?: {
-    expressions?: Record<string, string | string[]>;
-  };
-};
 type ExpressionSaveResponse = {
   ok?: boolean;
   error?: string;
@@ -41,34 +30,28 @@ const expressionSelect = requireElement(document.querySelector<HTMLSelectElement
 const customExpressionField = requireElement(document.querySelector<HTMLElement>("#customExpressionField"), "#customExpressionField");
 const customExpressionInput = requireElement(document.querySelector<HTMLInputElement>("#customExpressionInput"), "#customExpressionInput");
 const expressionAssetSelect = requireElement(document.querySelector<HTMLSelectElement>("#expressionAssetSelect"), "#expressionAssetSelect");
+const uploadAssetKindSelect = requireElement(document.querySelector<HTMLSelectElement>("#uploadAssetKindSelect"), "#uploadAssetKindSelect");
+const expressionImageInput = requireElement(document.querySelector<HTMLInputElement>("#expressionImageInput"), "#expressionImageInput");
+const uploadExpressionImagesButton = requireElement(document.querySelector<HTMLButtonElement>("#uploadExpressionImagesButton"), "#uploadExpressionImagesButton");
 const previewGrid = requireElement(document.querySelector<HTMLElement>("#expressionPreviewGrid"), "#expressionPreviewGrid");
 const output = requireElement(document.querySelector<HTMLElement>("#expressionOutput"), "#expressionOutput");
 const status = requireElement(document.querySelector<HTMLElement>("#expressionStatus"), "#expressionStatus");
 const saveExpressionButton = requireElement(document.querySelector<HTMLButtonElement>("#saveExpressionButton"), "#saveExpressionButton");
+const deleteExpressionButton = requireElement(document.querySelector<HTMLButtonElement>("#deleteExpressionButton"), "#deleteExpressionButton");
 
 let existingExpressions: Record<string, string | string[]> = {};
 let savedAssetFiles: AssetFile[] = [];
 const newExpressionSelectValue = "__new_expression__";
 
 /**
- * Reads a dev API response while preserving useful server error text.
+ * Returns the selected asset folder for image uploads.
  */
-async function readApiJson<T extends { ok?: boolean; error?: string; message?: string }>(response: Response): Promise<T> {
-  const text = await response.text();
+function getUploadAssetKind() {
+  const selectedKind = uploadAssetKindSelect.value;
 
-  if (!text) {
-    return {} as T;
-  }
-
-  try {
-    return JSON.parse(text) as T;
-  } catch {
-    return {
-      ok: false,
-      error: `http_${response.status}`,
-      message: "API가 JSON이 아닌 응답을 보냈어요. 서버를 다시 시작했는지 확인하세요.",
-    } as T;
-  }
+  return selectedKind === "base" || selectedKind === "parts" || selectedKind === "scenes"
+    ? selectedKind
+    : "base";
 }
 
 /**
@@ -104,6 +87,7 @@ function renderCustomExpressionField() {
 
   customExpressionField.hidden = !isNewExpression;
   customExpressionField.style.display = isNewExpression ? "grid" : "none";
+  deleteExpressionButton.disabled = isNewExpression || !getSelectedExpression();
 }
 
 /**
@@ -176,13 +160,11 @@ function applyExpressionSelection() {
  * Renders base image options from saved character assets.
  */
 function renderBaseAssetOptions() {
-  const baseAssets = savedAssetFiles.filter((assetFile) => assetFile.kind === "base" && assetFile.scope !== "common");
+  const baseAssets = filterAssetFiles(savedAssetFiles, ["base"], { includeCommon: false });
 
   expressionAssetSelect.replaceChildren(new Option(baseAssets.length > 0 ? "랜덤 이미지 선택" : "assets/base 이미지가 없어요.", ""));
   baseAssets.forEach((assetFile) => {
-    const label = assetFile.path.replace(/^\.\/src\/characters\/[^/]+\/assets\/base\//, "");
-
-    expressionAssetSelect.append(new Option(label, assetFile.path));
+    expressionAssetSelect.append(new Option(createAssetOptionLabel(assetFile), assetFile.path));
   });
   applyExpressionSelection();
 }
@@ -217,14 +199,7 @@ function renderExpressionOptions() {
  */
 async function loadSavedAssetFiles() {
   const characterId = characterSelect.value || "rine";
-  const response = await fetch(`/api/devtools/asset-files?characterId=${encodeURIComponent(characterId)}`);
-  const result = await readApiJson<AssetFilesResponse>(response);
-
-  if (!response.ok || !result.ok) {
-    throw new Error(result.message ?? result.error ?? "저장된 에셋 목록을 불러오지 못했어요.");
-  }
-
-  savedAssetFiles = result.files ?? [];
+  savedAssetFiles = await fetchAssetFiles(characterId);
   renderBaseAssetOptions();
 }
 
@@ -233,12 +208,7 @@ async function loadSavedAssetFiles() {
  */
 async function loadCharacterAssets() {
   const characterId = characterSelect.value || "rine";
-  const response = await fetch(`/api/devtools/character-assets?characterId=${encodeURIComponent(characterId)}`);
-  const result = await readApiJson<CharacterAssetsResponse>(response);
-
-  if (!response.ok || !result.ok) {
-    throw new Error(result.message ?? result.error ?? "캐릭터 Expression 정보를 불러오지 못했어요.");
-  }
+  const result = await fetchCharacterAssets(characterId);
 
   existingExpressions = result.assets?.expressions ?? {};
   renderExpressionOptions();
@@ -250,22 +220,10 @@ async function loadCharacterAssets() {
  * Loads available character ids from the dev server.
  */
 async function loadCharacters() {
-  characterSelect.replaceChildren(new Option("캐릭터를 불러오는 중이에요.", ""));
-
   try {
-    const response = await fetch("/api/devtools/characters");
-    const result = await readApiJson<CharacterListResponse>(response);
+    const selectedCharacterId = await populateCharacterSelect(characterSelect);
 
-    if (!response.ok || !result.ok) {
-      throw new Error(result.message ?? result.error ?? "캐릭터 목록을 불러오지 못했어요.");
-    }
-
-    const characters = result.characters ?? [];
-
-    characterSelect.replaceChildren(...characters.map((characterId) => new Option(characterId, characterId)));
-    characterSelect.value = characters.includes("rine") ? "rine" : characters[0] ?? "";
-
-    if (characterSelect.value) {
+    if (selectedCharacterId) {
       await loadCharacterAssets();
       return;
     }
@@ -273,6 +231,48 @@ async function loadCharacters() {
     status.textContent = "불러올 캐릭터가 없어요.";
   } catch (error) {
     status.textContent = error instanceof Error ? error.message : "캐릭터 목록을 불러오지 못했어요.";
+  }
+}
+
+/**
+ * Saves selected browser files into the chosen character asset folder.
+ */
+async function uploadExpressionImages() {
+  const files = Array.from(expressionImageInput.files ?? []);
+  const assetKind = getUploadAssetKind();
+  const characterId = characterSelect.value || "rine";
+
+  if (files.length === 0) {
+    status.textContent = "저장할 이미지를 먼저 선택하세요.";
+    return;
+  }
+
+  uploadExpressionImagesButton.disabled = true;
+  status.textContent = `${assetKind} 폴더에 이미지 ${files.length}개를 저장하는 중이에요.`;
+
+  try {
+    const images = await readImageFiles(files);
+    const savedFiles = await saveUploadedAssetFiles(
+      createCharacterAssetSaveDirectory(characterId, assetKind as CharacterAssetSaveKind),
+      images,
+    );
+    const savedPaths = createSavedAssetPaths(savedFiles);
+
+    await loadSavedAssetFiles();
+
+    if (assetKind === "base") {
+      Array.from(expressionAssetSelect.options).forEach((option) => {
+        option.selected = savedPaths.includes(option.value) || option.selected;
+      });
+      renderOutputs();
+    }
+
+    expressionImageInput.value = "";
+    status.textContent = `${assetKind} 폴더에 이미지 ${savedFiles.length}개를 저장했어요.`;
+  } catch (error) {
+    status.textContent = error instanceof Error ? error.message : "이미지 저장 요청에 실패했어요.";
+  } finally {
+    uploadExpressionImagesButton.disabled = false;
   }
 }
 
@@ -326,6 +326,52 @@ async function saveExpressionConfig() {
 }
 
 /**
+ * Deletes the selected expression mapping from the character config.
+ */
+async function deleteExpressionConfig() {
+  const expression = getSelectedExpression();
+
+  if (!expression || expressionSelect.value === newExpressionSelectValue) {
+    status.textContent = "삭제할 기존 Expression을 선택하세요.";
+    return;
+  }
+
+  const confirmed = window.confirm(`${characterSelect.value || "rine"} 캐릭터의 '${expression}' Expression을 삭제할까요?`);
+
+  if (!confirmed) {
+    return;
+  }
+
+  deleteExpressionButton.disabled = true;
+  status.textContent = "Expression을 삭제하는 중이에요.";
+
+  try {
+    const response = await fetch("/api/devtools/delete-character-expression", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        characterId: characterSelect.value || "rine",
+        expression,
+      }),
+    });
+    const result = await readApiJson<ExpressionSaveResponse>(response);
+
+    if (!response.ok || !result.ok) {
+      status.textContent = result.message ?? `Expression 삭제 실패: ${result.error ?? response.status}`;
+      return;
+    }
+
+    expressionSelect.value = "neutral";
+    await loadCharacterAssets();
+    status.textContent = `${expression} Expression을 삭제했어요.`;
+  } catch (error) {
+    status.textContent = error instanceof Error ? error.message : "Expression 삭제 요청에 실패했어요.";
+  } finally {
+    renderCustomExpressionField();
+  }
+}
+
+/**
  * Wires the expression settings page.
  */
 function init() {
@@ -336,8 +382,14 @@ function init() {
   customExpressionInput.addEventListener("input", renderOutputs);
   customExpressionInput.addEventListener("change", renderOutputs);
   expressionAssetSelect.addEventListener("change", renderOutputs);
+  uploadExpressionImagesButton.addEventListener("click", () => {
+    void uploadExpressionImages();
+  });
   saveExpressionButton.addEventListener("click", () => {
     void saveExpressionConfig();
+  });
+  deleteExpressionButton.addEventListener("click", () => {
+    void deleteExpressionConfig();
   });
 
   void loadCharacters();

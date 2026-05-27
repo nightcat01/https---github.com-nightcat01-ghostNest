@@ -1,38 +1,13 @@
 import { requireElement } from "./assetShared.js";
+import {
+  AssetFile,
+  fetchAssetFiles,
+  fetchCharacterAssets,
+  readApiJson,
+} from "./assetApi.js";
+import { populateCharacterSelect } from "./assetCharacterSelect.js";
+import { createAssetOptionLabel, filterAssetFiles } from "./assetSelect.js";
 
-type CharacterListResponse = {
-  ok?: boolean;
-  error?: string;
-  message?: string;
-  characters?: string[];
-};
-type AssetFile = {
-  fileName: string;
-  kind: "base" | "part" | "scene" | "asset";
-  path: string;
-  scope?: "character" | "common";
-};
-type AssetFilesResponse = {
-  ok?: boolean;
-  error?: string;
-  message?: string;
-  files?: AssetFile[];
-};
-type CharacterAssetsResponse = {
-  ok?: boolean;
-  error?: string;
-  message?: string;
-  assets?: {
-    expressions?: Record<string, string | string[]>;
-    surfaces?: Record<string, {
-      id?: string;
-      image?: string;
-      expression?: string;
-      alt?: string;
-      layers?: Record<string, unknown>;
-    }>;
-  };
-};
 type SurfaceSaveResponse = {
   ok?: boolean;
   error?: string;
@@ -62,31 +37,11 @@ const preview = requireElement(document.querySelector<HTMLElement>("#setPreview"
 const output = requireElement(document.querySelector<HTMLElement>("#setOutput"), "#setOutput");
 const status = requireElement(document.querySelector<HTMLElement>("#setStatus"), "#setStatus");
 const saveButton = requireElement(document.querySelector<HTMLButtonElement>("#saveSurfaceConfigButton"), "#saveSurfaceConfigButton");
+const deleteButton = requireElement(document.querySelector<HTMLButtonElement>("#deleteSurfaceConfigButton"), "#deleteSurfaceConfigButton");
 
 let existingSurfaces: ExistingSurface[] = [];
 let existingExpressions: Record<string, string | string[]> = {};
 let savedAssetFiles: AssetFile[] = [];
-
-/**
- * Reads a dev API response while preserving useful server error text.
- */
-async function readApiJson<T extends { ok?: boolean; error?: string; message?: string }>(response: Response): Promise<T> {
-  const text = await response.text();
-
-  if (!text) {
-    return {} as T;
-  }
-
-  try {
-    return JSON.parse(text) as T;
-  } catch {
-    return {
-      ok: false,
-      error: `http_${response.status}`,
-      message: "API가 JSON이 아닌 응답을 보냈어요. 서버를 다시 시작했는지 확인하세요.",
-    } as T;
-  }
-}
 
 /**
  * Keeps Set options in numeric id order when possible.
@@ -186,13 +141,11 @@ function renderOutputs() {
  * Renders base asset options for Set base selection.
  */
 function renderBaseAssetOptions() {
-  const baseAssets = savedAssetFiles.filter((assetFile) => assetFile.kind === "base" && assetFile.scope !== "common");
+  const baseAssets = filterAssetFiles(savedAssetFiles, ["base"], { includeCommon: false });
 
   baseAssetSelect.replaceChildren(new Option(baseAssets.length > 0 ? "base 이미지 선택" : "assets/base 이미지가 없어요.", ""));
   baseAssets.forEach((assetFile) => {
-    const label = assetFile.path.replace(/^\.\/src\/characters\/[^/]+\/assets\/base\//, "");
-
-    baseAssetSelect.append(new Option(label, assetFile.path));
+    baseAssetSelect.append(new Option(createAssetOptionLabel(assetFile), assetFile.path));
   });
 }
 
@@ -224,14 +177,8 @@ function renderExpressionOptions() {
  */
 async function loadSavedAssetFiles() {
   const characterId = characterSelect.value || "rine";
-  const response = await fetch(`/api/devtools/asset-files?characterId=${encodeURIComponent(characterId)}`);
-  const result = await readApiJson<AssetFilesResponse>(response);
 
-  if (!response.ok || !result.ok) {
-    throw new Error(result.message ?? result.error ?? "저장된 에셋 목록을 불러오지 못했어요.");
-  }
-
-  savedAssetFiles = result.files ?? [];
+  savedAssetFiles = await fetchAssetFiles(characterId);
   renderBaseAssetOptions();
 }
 
@@ -240,12 +187,7 @@ async function loadSavedAssetFiles() {
  */
 async function loadCharacterAssets() {
   const characterId = characterSelect.value || "rine";
-  const response = await fetch(`/api/devtools/character-assets?characterId=${encodeURIComponent(characterId)}`);
-  const result = await readApiJson<CharacterAssetsResponse>(response);
-
-  if (!response.ok || !result.ok) {
-    throw new Error(result.message ?? result.error ?? "캐릭터 Set 정보를 불러오지 못했어요.");
-  }
+  const result = await fetchCharacterAssets(characterId);
 
   const surfaces = result.assets?.surfaces ?? {};
 
@@ -295,22 +237,10 @@ async function loadCharacterAssets() {
  * Loads available character ids from the dev server.
  */
 async function loadCharacters() {
-  characterSelect.replaceChildren(new Option("캐릭터를 불러오는 중이에요.", ""));
-
   try {
-    const response = await fetch("/api/devtools/characters");
-    const result = await readApiJson<CharacterListResponse>(response);
+    const selectedCharacterId = await populateCharacterSelect(characterSelect);
 
-    if (!response.ok || !result.ok) {
-      throw new Error(result.message ?? result.error ?? "캐릭터 목록을 불러오지 못했어요.");
-    }
-
-    const characters = result.characters ?? [];
-
-    characterSelect.replaceChildren(...characters.map((characterId) => new Option(characterId, characterId)));
-    characterSelect.value = characters.includes("rine") ? "rine" : characters[0] ?? "";
-
-    if (characterSelect.value) {
+    if (selectedCharacterId) {
       await loadCharacterAssets();
       return;
     }
@@ -325,6 +255,8 @@ async function loadCharacters() {
  * Applies the selected Set to the editable fields.
  */
 function applySurfaceSelection() {
+  deleteButton.disabled = surfaceSelect.value === newSurfaceSelectValue || !surfaceSelect.value;
+
   if (surfaceSelect.value === newSurfaceSelectValue) {
     surfaceIdInput.value = surfaceIdInput.value.trim() || "0";
     surfaceExpressionSelect.value = "";
@@ -388,6 +320,51 @@ async function saveSurfaceConfig() {
 }
 
 /**
+ * Deletes the selected Set from the character surfaces.
+ */
+async function deleteSurfaceConfig() {
+  const surfaceId = surfaceSelect.value;
+
+  if (!surfaceId || surfaceId === newSurfaceSelectValue) {
+    status.textContent = "삭제할 기존 Set을 선택하세요.";
+    return;
+  }
+
+  const confirmed = window.confirm(`${characterSelect.value || "rine"} 캐릭터의 Set ${surfaceId}를 삭제할까요?\n\n이 Set에 붙은 Layer 설정도 함께 삭제됩니다.`);
+
+  if (!confirmed) {
+    return;
+  }
+
+  deleteButton.disabled = true;
+  status.textContent = "Set을 삭제하는 중이에요.";
+
+  try {
+    const response = await fetch("/api/devtools/delete-character-surface", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        characterId: characterSelect.value || "rine",
+        surfaceId,
+      }),
+    });
+    const result = await readApiJson<SurfaceSaveResponse>(response);
+
+    if (!response.ok || !result.ok) {
+      status.textContent = result.message ?? `Set 삭제 실패: ${result.error ?? response.status}`;
+      return;
+    }
+
+    await loadCharacterAssets();
+    status.textContent = `Set ${surfaceId}를 삭제했어요.`;
+  } catch (error) {
+    status.textContent = error instanceof Error ? error.message : "Set 삭제 요청에 실패했어요.";
+  } finally {
+    applySurfaceSelection();
+  }
+}
+
+/**
  * Wires the Set settings page.
  */
 function init() {
@@ -405,6 +382,9 @@ function init() {
   });
   saveButton.addEventListener("click", () => {
     void saveSurfaceConfig();
+  });
+  deleteButton.addEventListener("click", () => {
+    void deleteSurfaceConfig();
   });
 
   void loadCharacters();

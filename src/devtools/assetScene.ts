@@ -1,33 +1,14 @@
 import { requireElement } from "./assetShared.js";
+import {
+  AssetFile,
+  fetchAssetFiles,
+  fetchCharacterAssets,
+  readApiJson,
+} from "./assetApi.js";
+import { populateCharacterSelect } from "./assetCharacterSelect.js";
+import { appendAssetOptionGroups, filterAssetFiles } from "./assetSelect.js";
 import type { RuntimeScene, RuntimeSceneLayer } from "../core/types.js";
 
-type CharacterListResponse = {
-  ok?: boolean;
-  error?: string;
-  message?: string;
-  characters?: string[];
-};
-type AssetFile = {
-  fileName: string;
-  kind: "base" | "part" | "scene" | "asset";
-  path: string;
-  scope?: "character" | "common";
-};
-type AssetFilesResponse = {
-  ok?: boolean;
-  error?: string;
-  message?: string;
-  files?: AssetFile[];
-};
-type CharacterAssetsResponse = {
-  ok?: boolean;
-  error?: string;
-  message?: string;
-  assets?: {
-    defaultScene?: string;
-    scenes?: Record<string, RuntimeScene>;
-  };
-};
 type SceneSaveResponse = {
   ok?: boolean;
   error?: string;
@@ -43,6 +24,29 @@ type ScenePlacementInputs = {
   width: HTMLInputElement;
   height: HTMLInputElement;
 };
+type EditableSceneLayer = {
+  id: string;
+  role: "prop" | "effect";
+  image: string;
+  depth: number;
+  placement: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    unit: "percent";
+  };
+};
+type SceneDragMode = "move" | "resize-nw" | "resize-ne" | "resize-se" | "resize-sw";
+type SceneDragState = {
+  layerId: string;
+  role: EditableSceneLayer["role"];
+  mode: SceneDragMode;
+  startClientX: number;
+  startClientY: number;
+  stageRect: DOMRect;
+  startPlacement: EditableSceneLayer["placement"];
+};
 
 const newSceneSelectValue = "__new_scene__";
 const characterSelect = requireElement(document.querySelector<HTMLSelectElement>("#characterSelect"), "#characterSelect");
@@ -53,10 +57,16 @@ const backgroundAssetSelect = requireElement(document.querySelector<HTMLSelectEl
 const backgroundColorInput = requireElement(document.querySelector<HTMLInputElement>("#backgroundColorInput"), "#backgroundColorInput");
 const backgroundDepthInput = requireElement(document.querySelector<HTMLInputElement>("#backgroundDepthInput"), "#backgroundDepthInput");
 const characterDepthInput = requireElement(document.querySelector<HTMLInputElement>("#characterDepthInput"), "#characterDepthInput");
+const propLayerSelect = requireElement(document.querySelector<HTMLSelectElement>("#propLayerSelect"), "#propLayerSelect");
 const propAssetSelect = requireElement(document.querySelector<HTMLSelectElement>("#propAssetSelect"), "#propAssetSelect");
 const propDepthInput = requireElement(document.querySelector<HTMLInputElement>("#propDepthInput"), "#propDepthInput");
+const addPropLayerButton = requireElement(document.querySelector<HTMLButtonElement>("#addPropLayerButton"), "#addPropLayerButton");
+const removePropLayerButton = requireElement(document.querySelector<HTMLButtonElement>("#removePropLayerButton"), "#removePropLayerButton");
+const effectLayerSelect = requireElement(document.querySelector<HTMLSelectElement>("#effectLayerSelect"), "#effectLayerSelect");
 const effectAssetSelect = requireElement(document.querySelector<HTMLSelectElement>("#effectAssetSelect"), "#effectAssetSelect");
 const effectDepthInput = requireElement(document.querySelector<HTMLInputElement>("#effectDepthInput"), "#effectDepthInput");
+const addEffectLayerButton = requireElement(document.querySelector<HTMLButtonElement>("#addEffectLayerButton"), "#addEffectLayerButton");
+const removeEffectLayerButton = requireElement(document.querySelector<HTMLButtonElement>("#removeEffectLayerButton"), "#removeEffectLayerButton");
 const propPlacementInputs = {
   x: requireElement(document.querySelector<HTMLInputElement>("#propXInput"), "#propXInput"),
   y: requireElement(document.querySelector<HTMLInputElement>("#propYInput"), "#propYInput"),
@@ -73,79 +83,25 @@ const preview = requireElement(document.querySelector<HTMLElement>("#scenePrevie
 const output = requireElement(document.querySelector<HTMLElement>("#sceneOutput"), "#sceneOutput");
 const status = requireElement(document.querySelector<HTMLElement>("#sceneStatus"), "#sceneStatus");
 const saveButton = requireElement(document.querySelector<HTMLButtonElement>("#saveSceneButton"), "#saveSceneButton");
+const deleteButton = requireElement(document.querySelector<HTMLButtonElement>("#deleteSceneButton"), "#deleteSceneButton");
 
 let savedAssetFiles: AssetFile[] = [];
 let existingScenes: Record<string, RuntimeScene> = {};
 let existingDefaultScene = "";
-
-/**
- * Reads a dev API response while preserving useful server error text.
- */
-async function readApiJson<T extends { ok?: boolean; error?: string; message?: string }>(response: Response): Promise<T> {
-  const text = await response.text();
-
-  if (!text) {
-    return {} as T;
-  }
-
-  try {
-    return JSON.parse(text) as T;
-  } catch {
-    return {
-      ok: false,
-      error: `http_${response.status}`,
-      message: "API가 JSON이 아닌 응답을 보냈어요. 서버가 다시 시작되었는지 확인하세요.",
-    } as T;
-  }
-}
-
-/**
- * Formats a saved asset option with its common or character scope.
- */
-function createAssetLabel(assetFile: AssetFile) {
-  const pathLabel = assetFile.path
-    .replace("./src/characters/", "")
-    .replace("./src/assets/common/", "common/");
-  const prefix = assetFile.scope === "common" ? "공통 / " : "";
-
-  return `${prefix}${pathLabel}`;
-}
-
-/**
- * Adds asset options grouped by character and common scope.
- */
-function appendAssetOptionGroups(select: HTMLSelectElement, assetFiles: AssetFile[]) {
-  const characterAssets = assetFiles.filter((assetFile) => assetFile.scope !== "common");
-  const commonAssets = assetFiles.filter((assetFile) => assetFile.scope === "common");
-
-  [
-    ["캐릭터 에셋", characterAssets],
-    ["공통 에셋", commonAssets],
-  ].forEach(([label, files]) => {
-    if (!Array.isArray(files) || files.length === 0) {
-      return;
-    }
-
-    const group = document.createElement("optgroup");
-
-    group.label = `${label} (${files.length})`;
-    files.forEach((assetFile) => {
-      group.append(new Option(createAssetLabel(assetFile), assetFile.path));
-    });
-    select.append(group);
-  });
-}
+let propLayers: EditableSceneLayer[] = [];
+let effectLayers: EditableSceneLayer[] = [];
+let sceneDragState: SceneDragState | null = null;
 
 /**
  * Renders reusable scene asset choices for background, prop, and effect slots.
  */
 function renderAssetOptions() {
-  const sceneAssets = savedAssetFiles.filter((assetFile) => assetFile.kind === "scene");
-  const sceneAndPartAssets = savedAssetFiles.filter((assetFile) => assetFile.kind === "scene" || assetFile.kind === "part");
+  const sceneAssets = filterAssetFiles(savedAssetFiles, ["scene"]);
+  const sceneAndPartAssets = filterAssetFiles(savedAssetFiles, ["scene", "part"]);
 
   backgroundAssetSelect.replaceChildren(new Option(sceneAssets.length > 0 ? "배경 이미지 없음" : "assets/scenes 이미지가 없어요.", ""));
-  propAssetSelect.replaceChildren(new Option(sceneAndPartAssets.length > 0 ? "소품 이미지 없음" : "scene/parts 이미지가 없어요.", ""));
-  effectAssetSelect.replaceChildren(new Option(sceneAndPartAssets.length > 0 ? "FX 이미지 없음" : "scene/parts 이미지가 없어요.", ""));
+  propAssetSelect.replaceChildren(new Option(sceneAndPartAssets.length > 0 ? "소품 이미지 선택" : "scene/parts 이미지가 없어요.", ""));
+  effectAssetSelect.replaceChildren(new Option(sceneAndPartAssets.length > 0 ? "FX 이미지 선택" : "scene/parts 이미지가 없어요.", ""));
   appendAssetOptionGroups(backgroundAssetSelect, sceneAssets);
   appendAssetOptionGroups(propAssetSelect, sceneAndPartAssets);
   appendAssetOptionGroups(effectAssetSelect, sceneAndPartAssets);
@@ -161,16 +117,216 @@ function readNumber(input: HTMLInputElement, fallback: number) {
 }
 
 /**
+ * Keeps placement values inside the percent preview stage.
+ */
+function clampPlacement(placement: EditableSceneLayer["placement"]) {
+  const width = Math.min(100, Math.max(1, placement.width));
+  const height = Math.min(100, Math.max(1, placement.height));
+  const x = Math.min(100 - width, Math.max(0, placement.x));
+  const y = Math.min(100 - height, Math.max(0, placement.y));
+
+  return { x, y, width, height, unit: "percent" as const };
+}
+
+/**
  * Converts four placement inputs into the percent placement used by runtime scenes.
  */
 function readPlacement(inputs: ScenePlacementInputs) {
-  return {
+  return clampPlacement({
     x: readNumber(inputs.x, 0),
     y: readNumber(inputs.y, 0),
     width: readNumber(inputs.width, 100),
     height: readNumber(inputs.height, 100),
-    unit: "percent" as const,
+    unit: "percent",
+  });
+}
+
+/**
+ * Writes placement values back into the edit fields.
+ */
+function writePlacement(inputs: ScenePlacementInputs, placement: EditableSceneLayer["placement"]) {
+  inputs.x.value = String(Number(placement.x.toFixed(1)));
+  inputs.y.value = String(Number(placement.y.toFixed(1)));
+  inputs.width.value = String(Number(placement.width.toFixed(1)));
+  inputs.height.value = String(Number(placement.height.toFixed(1)));
+}
+
+/**
+ * Returns the selected editable layer from one role list.
+ */
+function getSelectedEditableLayer(role: EditableSceneLayer["role"]) {
+  const layers = role === "prop" ? propLayers : effectLayers;
+  const select = role === "prop" ? propLayerSelect : effectLayerSelect;
+
+  return layers.find((layer) => layer.id === select.value) ?? null;
+}
+
+/**
+ * Creates a stable editable layer id for newly added scene items.
+ */
+function createEditableLayerId(role: EditableSceneLayer["role"]) {
+  const layers = role === "prop" ? propLayers : effectLayers;
+  const prefix = role === "prop" ? "prop" : "effect";
+  let index = layers.length + 1;
+
+  while (layers.some((layer) => layer.id === `${prefix}-${index}`)) {
+    index += 1;
+  }
+
+  return `${prefix}-${index}`;
+}
+
+/**
+ * Reads the current form fields for one prop or effect layer.
+ */
+function readEditableLayerFromInputs(role: EditableSceneLayer["role"], id = createEditableLayerId(role)): EditableSceneLayer {
+  const assetSelect = role === "prop" ? propAssetSelect : effectAssetSelect;
+  const depthInput = role === "prop" ? propDepthInput : effectDepthInput;
+  const placementInputs = role === "prop" ? propPlacementInputs : effectPlacementInputs;
+  const fallbackDepth = role === "prop" ? 30 : 40;
+
+  return {
+    id,
+    role,
+    image: assetSelect.value,
+    depth: readNumber(depthInput, fallbackDepth),
+    placement: readPlacement(placementInputs),
   };
+}
+
+/**
+ * Writes one editable layer into the matching form fields.
+ */
+function applyEditableLayerToInputs(layer: EditableSceneLayer | null, role: EditableSceneLayer["role"]) {
+  const assetSelect = role === "prop" ? propAssetSelect : effectAssetSelect;
+  const depthInput = role === "prop" ? propDepthInput : effectDepthInput;
+  const placementInputs = role === "prop" ? propPlacementInputs : effectPlacementInputs;
+  const fallback = role === "prop"
+    ? { x: 20, y: 74, width: 80, height: 25, unit: "percent" as const }
+    : { x: 0, y: 0, width: 100, height: 100, unit: "percent" as const };
+
+  assetSelect.value = layer?.image ?? "";
+  depthInput.value = String(layer?.depth ?? (role === "prop" ? 30 : 40));
+  writePlacement(placementInputs, layer?.placement ?? fallback);
+}
+
+/**
+ * Replaces or inserts one editable layer in the relevant role list.
+ */
+function upsertEditableLayer(layer: EditableSceneLayer) {
+  const layers = layer.role === "prop" ? propLayers : effectLayers;
+  const index = layers.findIndex((item) => item.id === layer.id);
+  const nextLayers = index >= 0
+    ? layers.map((item) => (item.id === layer.id ? layer : item))
+    : [...layers, layer];
+
+  if (layer.role === "prop") {
+    propLayers = nextLayers;
+    propLayerSelect.value = layer.id;
+  } else {
+    effectLayers = nextLayers;
+    effectLayerSelect.value = layer.id;
+  }
+}
+
+/**
+ * Syncs the current form values into the selected editable layer.
+ */
+function syncSelectedLayerFromInputs(role: EditableSceneLayer["role"]) {
+  const selectedLayer = getSelectedEditableLayer(role);
+
+  if (!selectedLayer) {
+    return;
+  }
+
+  upsertEditableLayer(readEditableLayerFromInputs(role, selectedLayer.id));
+}
+
+/**
+ * Renders the select list for one editable scene layer role.
+ */
+function renderEditableLayerList(role: EditableSceneLayer["role"]) {
+  const layers = role === "prop" ? propLayers : effectLayers;
+  const select = role === "prop" ? propLayerSelect : effectLayerSelect;
+  const removeButton = role === "prop" ? removePropLayerButton : removeEffectLayerButton;
+  const currentValue = select.value;
+
+  select.replaceChildren();
+
+  if (layers.length === 0) {
+    select.append(new Option(role === "prop" ? "소품 없음" : "FX 없음", ""));
+    removeButton.disabled = true;
+    return;
+  }
+
+  layers.forEach((layer, index) => {
+    const fileName = layer.image.split("/").pop() ?? "이미지 없음";
+
+    select.append(new Option(`${index + 1}. ${fileName} / depth ${layer.depth}`, layer.id));
+  });
+  select.value = layers.some((layer) => layer.id === currentValue) ? currentValue : layers[0]?.id ?? "";
+  removeButton.disabled = !select.value;
+}
+
+/**
+ * Refreshes both prop and effect list controls.
+ */
+function renderEditableLayerLists() {
+  renderEditableLayerList("prop");
+  renderEditableLayerList("effect");
+}
+
+/**
+ * Adds a prop or effect layer from the current form values.
+ */
+function addEditableLayer(role: EditableSceneLayer["role"]) {
+  const layer = readEditableLayerFromInputs(role);
+
+  if (!layer.image) {
+    status.textContent = role === "prop" ? "추가할 소품 이미지를 선택하세요." : "추가할 FX 이미지를 선택하세요.";
+    return;
+  }
+
+  upsertEditableLayer(layer);
+  renderEditableLayerLists();
+  renderOutputs();
+}
+
+/**
+ * Removes the selected prop or effect layer.
+ */
+function removeEditableLayer(role: EditableSceneLayer["role"]) {
+  const select = role === "prop" ? propLayerSelect : effectLayerSelect;
+  const selectedId = select.value;
+
+  if (!selectedId) {
+    return;
+  }
+
+  if (role === "prop") {
+    propLayers = propLayers.filter((layer) => layer.id !== selectedId);
+  } else {
+    effectLayers = effectLayers.filter((layer) => layer.id !== selectedId);
+  }
+
+  renderEditableLayerLists();
+  applyEditableLayerToInputs(getSelectedEditableLayer(role), role);
+  renderOutputs();
+}
+
+/**
+ * Converts editable prop and effect layers into runtime scene layers.
+ */
+function createEditableRuntimeLayers() {
+  return [...propLayers, ...effectLayers]
+    .filter((layer) => layer.image)
+    .map((layer) => ({
+      id: layer.id,
+      role: layer.role,
+      image: layer.image,
+      depth: layer.depth,
+      placement: layer.placement,
+    } satisfies RuntimeSceneLayer));
 }
 
 /**
@@ -181,8 +337,6 @@ function createSceneSnippet() {
   const layers: RuntimeSceneLayer[] = [];
   const backgroundImage = backgroundAssetSelect.value;
   const backgroundColor = backgroundColorInput.value.trim();
-  const propImage = propAssetSelect.value;
-  const effectImage = effectAssetSelect.value;
 
   if (backgroundImage || backgroundColor) {
     layers.push({
@@ -199,26 +353,7 @@ function createSceneSnippet() {
     role: "character",
     depth: readNumber(characterDepthInput, 20),
   });
-
-  if (propImage) {
-    layers.push({
-      id: "desk-prop",
-      role: "prop",
-      image: propImage,
-      depth: readNumber(propDepthInput, 30),
-      placement: readPlacement(propPlacementInputs),
-    });
-  }
-
-  if (effectImage) {
-    layers.push({
-      id: "scene-effect",
-      role: "effect",
-      image: effectImage,
-      depth: readNumber(effectDepthInput, 40),
-      placement: readPlacement(effectPlacementInputs),
-    });
-  }
+  layers.push(...createEditableRuntimeLayers());
 
   return {
     sceneId,
@@ -243,6 +378,79 @@ function applyPreviewPlacement(element: HTMLElement, layer: RuntimeSceneLayer) {
   element.style.top = `${layer.placement.y}%`;
   element.style.width = `${layer.placement.width}%`;
   element.style.height = `${layer.placement.height}%`;
+}
+
+/**
+ * Starts dragging or resizing an editable scene layer.
+ */
+function startSceneLayerDrag(event: PointerEvent, layer: EditableSceneLayer, mode: SceneDragMode) {
+  const stageRect = preview.getBoundingClientRect();
+
+  sceneDragState = {
+    layerId: layer.id,
+    role: layer.role,
+    mode,
+    startClientX: event.clientX,
+    startClientY: event.clientY,
+    stageRect,
+    startPlacement: { ...layer.placement },
+  };
+  (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
+  event.preventDefault();
+}
+
+/**
+ * Applies the active drag state to the selected editable layer.
+ */
+function handleSceneLayerDrag(event: PointerEvent) {
+  if (!sceneDragState) {
+    return;
+  }
+
+  const layer = [...propLayers, ...effectLayers].find((item) => item.id === sceneDragState?.layerId);
+
+  if (!layer) {
+    return;
+  }
+
+  const deltaX = ((event.clientX - sceneDragState.startClientX) / sceneDragState.stageRect.width) * 100;
+  const deltaY = ((event.clientY - sceneDragState.startClientY) / sceneDragState.stageRect.height) * 100;
+  const nextPlacement = { ...sceneDragState.startPlacement };
+
+  if (sceneDragState.mode === "move") {
+    nextPlacement.x += deltaX;
+    nextPlacement.y += deltaY;
+  } else {
+    if (sceneDragState.mode.includes("w")) {
+      nextPlacement.x += deltaX;
+      nextPlacement.width -= deltaX;
+    }
+
+    if (sceneDragState.mode.includes("e")) {
+      nextPlacement.width += deltaX;
+    }
+
+    if (sceneDragState.mode.includes("n")) {
+      nextPlacement.y += deltaY;
+      nextPlacement.height -= deltaY;
+    }
+
+    if (sceneDragState.mode.includes("s")) {
+      nextPlacement.height += deltaY;
+    }
+  }
+
+  upsertEditableLayer({ ...layer, placement: clampPlacement(nextPlacement) });
+  renderEditableLayerLists();
+  applyEditableLayerToInputs(getSelectedEditableLayer(sceneDragState.role), sceneDragState.role);
+  renderOutputs();
+}
+
+/**
+ * Stops scene layer dragging.
+ */
+function stopSceneLayerDrag() {
+  sceneDragState = null;
 }
 
 /**
@@ -274,6 +482,26 @@ function createPreviewLayer(layer: RuntimeSceneLayer) {
     image.src = layer.image;
     image.alt = layer.alt ?? layer.id;
     element.append(image);
+  }
+
+  const editableLayer = [...propLayers, ...effectLayers].find((item) => item.id === layer.id);
+
+  if (editableLayer) {
+    element.classList.add("asset-scene-preview-layer-editable");
+    element.dataset.layerLabel = editableLayer.role === "prop" ? "소품" : "FX";
+    element.addEventListener("pointerdown", (event) => {
+      startSceneLayerDrag(event, editableLayer, "move");
+    });
+    (["nw", "ne", "se", "sw"] as const).forEach((corner) => {
+      const handle = document.createElement("span");
+
+      handle.className = `asset-composite-region-handle asset-composite-region-handle-${corner}`;
+      handle.addEventListener("pointerdown", (event) => {
+        event.stopPropagation();
+        startSceneLayerDrag(event, editableLayer, `resize-${corner}`);
+      });
+      element.append(handle);
+    });
   }
 
   return element;
@@ -308,21 +536,32 @@ function findLayer(scene: RuntimeScene | undefined, role: RuntimeSceneLayer["rol
 }
 
 /**
- * Writes placement values back into the edit fields.
+ * Returns editable layers from an existing runtime scene.
  */
-function applyPlacement(inputs: ScenePlacementInputs, layer: RuntimeSceneLayer | undefined, fallback: RuntimeSceneLayer["placement"]) {
-  const placement = layer?.placement ?? fallback;
-
-  inputs.x.value = String(placement?.x ?? 0);
-  inputs.y.value = String(placement?.y ?? 0);
-  inputs.width.value = String(placement?.width ?? 100);
-  inputs.height.value = String(placement?.height ?? 100);
+function readEditableLayers(scene: RuntimeScene | undefined, role: EditableSceneLayer["role"]) {
+  return (scene?.layers ?? [])
+    .filter((layer) => layer.role === role && layer.image)
+    .map((layer, index) => ({
+      id: layer.id || `${role}-${index + 1}`,
+      role,
+      image: layer.image ?? "",
+      depth: layer.depth ?? (role === "prop" ? 30 : 40),
+      placement: clampPlacement({
+        x: layer.placement?.x ?? (role === "prop" ? 20 : 0),
+        y: layer.placement?.y ?? (role === "prop" ? 74 : 0),
+        width: layer.placement?.width ?? (role === "prop" ? 80 : 100),
+        height: layer.placement?.height ?? (role === "prop" ? 25 : 100),
+        unit: "percent",
+      }),
+    } satisfies EditableSceneLayer));
 }
 
 /**
  * Applies the selected existing scene to the form.
  */
 function applySceneSelection() {
+  deleteButton.disabled = sceneSelect.value === newSceneSelectValue || !sceneSelect.value;
+
   if (sceneSelect.value === newSceneSelectValue) {
     sceneIdInput.value = sceneIdInput.value.trim() || "desk-room";
     defaultSceneInput.checked = !existingDefaultScene;
@@ -330,12 +569,11 @@ function applySceneSelection() {
     backgroundColorInput.value = "";
     backgroundDepthInput.value = "0";
     characterDepthInput.value = "20";
-    propAssetSelect.value = "";
-    propDepthInput.value = "30";
-    effectAssetSelect.value = "";
-    effectDepthInput.value = "40";
-    applyPlacement(propPlacementInputs, undefined, { x: 20, y: 74, width: 80, height: 25, unit: "percent" });
-    applyPlacement(effectPlacementInputs, undefined, { x: 0, y: 0, width: 100, height: 100, unit: "percent" });
+    propLayers = [];
+    effectLayers = [];
+    renderEditableLayerLists();
+    applyEditableLayerToInputs(null, "prop");
+    applyEditableLayerToInputs(null, "effect");
     renderOutputs();
     return;
   }
@@ -343,8 +581,6 @@ function applySceneSelection() {
   const scene = existingScenes[sceneSelect.value];
   const backgroundLayer = findLayer(scene, "background");
   const characterLayer = findLayer(scene, "character");
-  const propLayer = findLayer(scene, "prop");
-  const effectLayer = findLayer(scene, "effect");
 
   sceneIdInput.value = scene?.id ?? sceneSelect.value;
   defaultSceneInput.checked = existingDefaultScene === sceneSelect.value;
@@ -352,12 +588,11 @@ function applySceneSelection() {
   backgroundColorInput.value = backgroundLayer?.color ?? "";
   backgroundDepthInput.value = String(backgroundLayer?.depth ?? 0);
   characterDepthInput.value = String(characterLayer?.depth ?? 20);
-  propAssetSelect.value = propLayer?.image ?? "";
-  propDepthInput.value = String(propLayer?.depth ?? 30);
-  effectAssetSelect.value = effectLayer?.image ?? "";
-  effectDepthInput.value = String(effectLayer?.depth ?? 40);
-  applyPlacement(propPlacementInputs, propLayer, { x: 20, y: 74, width: 80, height: 25, unit: "percent" });
-  applyPlacement(effectPlacementInputs, effectLayer, { x: 0, y: 0, width: 100, height: 100, unit: "percent" });
+  propLayers = readEditableLayers(scene, "prop");
+  effectLayers = readEditableLayers(scene, "effect");
+  renderEditableLayerLists();
+  applyEditableLayerToInputs(getSelectedEditableLayer("prop"), "prop");
+  applyEditableLayerToInputs(getSelectedEditableLayer("effect"), "effect");
   renderOutputs();
 }
 
@@ -386,14 +621,8 @@ function renderSceneOptions() {
  */
 async function loadSavedAssetFiles() {
   const characterId = characterSelect.value || "rine";
-  const response = await fetch(`/api/devtools/asset-files?characterId=${encodeURIComponent(characterId)}`);
-  const result = await readApiJson<AssetFilesResponse>(response);
 
-  if (!response.ok || !result.ok) {
-    throw new Error(result.message ?? result.error ?? "저장된 에셋 목록을 불러오지 못했어요.");
-  }
-
-  savedAssetFiles = result.files ?? [];
+  savedAssetFiles = await fetchAssetFiles(characterId);
   renderAssetOptions();
 }
 
@@ -402,12 +631,7 @@ async function loadSavedAssetFiles() {
  */
 async function loadCharacterAssets() {
   const characterId = characterSelect.value || "rine";
-  const response = await fetch(`/api/devtools/character-assets?characterId=${encodeURIComponent(characterId)}`);
-  const result = await readApiJson<CharacterAssetsResponse>(response);
-
-  if (!response.ok || !result.ok) {
-    throw new Error(result.message ?? result.error ?? "캐릭터 Scene 정보를 불러오지 못했어요.");
-  }
+  const result = await fetchCharacterAssets(characterId);
 
   existingScenes = result.assets?.scenes ?? {};
   existingDefaultScene = result.assets?.defaultScene ?? "";
@@ -421,22 +645,10 @@ async function loadCharacterAssets() {
  * Loads available character ids from the dev server.
  */
 async function loadCharacters() {
-  characterSelect.replaceChildren(new Option("캐릭터를 불러오는 중이에요.", ""));
-
   try {
-    const response = await fetch("/api/devtools/characters");
-    const result = await readApiJson<CharacterListResponse>(response);
+    const selectedCharacterId = await populateCharacterSelect(characterSelect);
 
-    if (!response.ok || !result.ok) {
-      throw new Error(result.message ?? result.error ?? "캐릭터 목록을 불러오지 못했어요.");
-    }
-
-    const characters = result.characters ?? [];
-
-    characterSelect.replaceChildren(...characters.map((characterId) => new Option(characterId, characterId)));
-    characterSelect.value = characters.includes("rine") ? "rine" : characters[0] ?? "";
-
-    if (characterSelect.value) {
+    if (selectedCharacterId) {
       await loadCharacterAssets();
       return;
     }
@@ -509,6 +721,102 @@ async function saveSceneConfig() {
 }
 
 /**
+ * Deletes the selected scene from the character config.
+ */
+async function deleteSceneConfig() {
+  const sceneId = sceneSelect.value;
+
+  if (!sceneId || sceneId === newSceneSelectValue) {
+    status.textContent = "삭제할 기존 Scene을 선택하세요.";
+    return;
+  }
+
+  const confirmed = window.confirm(`${characterSelect.value || "rine"} 캐릭터의 Scene '${sceneId}'를 삭제할까요?`);
+
+  if (!confirmed) {
+    return;
+  }
+
+  deleteButton.disabled = true;
+  status.textContent = "Scene을 삭제하는 중이에요.";
+
+  try {
+    const response = await fetch("/api/devtools/delete-character-scene", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        characterId: characterSelect.value || "rine",
+        sceneId,
+      }),
+    });
+    const result = await readApiJson<SceneSaveResponse>(response);
+
+    if (!response.ok || !result.ok) {
+      status.textContent = result.message ?? `Scene 삭제 실패: ${result.error ?? response.status}`;
+      return;
+    }
+
+    sceneSelect.value = newSceneSelectValue;
+    await loadCharacterAssets();
+    status.textContent = `${sceneId} Scene을 삭제했어요.`;
+  } catch (error) {
+    status.textContent = error instanceof Error ? error.message : "Scene 삭제 요청에 실패했어요.";
+  } finally {
+    applySceneSelection();
+  }
+}
+
+/**
+ * Wires repeated editable layer controls.
+ */
+function wireEditableLayerControls() {
+  propLayerSelect.addEventListener("change", () => {
+    applyEditableLayerToInputs(getSelectedEditableLayer("prop"), "prop");
+    renderOutputs();
+  });
+  effectLayerSelect.addEventListener("change", () => {
+    applyEditableLayerToInputs(getSelectedEditableLayer("effect"), "effect");
+    renderOutputs();
+  });
+  addPropLayerButton.addEventListener("click", () => addEditableLayer("prop"));
+  addEffectLayerButton.addEventListener("click", () => addEditableLayer("effect"));
+  removePropLayerButton.addEventListener("click", () => removeEditableLayer("prop"));
+  removeEffectLayerButton.addEventListener("click", () => removeEditableLayer("effect"));
+  [
+    propAssetSelect,
+    propDepthInput,
+    ...Object.values(propPlacementInputs),
+  ].forEach((input) => {
+    input.addEventListener("input", () => {
+      syncSelectedLayerFromInputs("prop");
+      renderEditableLayerLists();
+      renderOutputs();
+    });
+    input.addEventListener("change", () => {
+      syncSelectedLayerFromInputs("prop");
+      renderEditableLayerLists();
+      renderOutputs();
+    });
+  });
+  [
+    effectAssetSelect,
+    effectDepthInput,
+    ...Object.values(effectPlacementInputs),
+  ].forEach((input) => {
+    input.addEventListener("input", () => {
+      syncSelectedLayerFromInputs("effect");
+      renderEditableLayerLists();
+      renderOutputs();
+    });
+    input.addEventListener("change", () => {
+      syncSelectedLayerFromInputs("effect");
+      renderEditableLayerLists();
+      renderOutputs();
+    });
+  });
+}
+
+/**
  * Wires the Scene settings page.
  */
 function init() {
@@ -523,19 +831,20 @@ function init() {
     backgroundColorInput,
     backgroundDepthInput,
     characterDepthInput,
-    propAssetSelect,
-    propDepthInput,
-    effectAssetSelect,
-    effectDepthInput,
-    ...Object.values(propPlacementInputs),
-    ...Object.values(effectPlacementInputs),
   ].forEach((input) => {
     input.addEventListener("input", renderOutputs);
     input.addEventListener("change", renderOutputs);
   });
+  wireEditableLayerControls();
   saveButton.addEventListener("click", () => {
     void saveSceneConfig();
   });
+  deleteButton.addEventListener("click", () => {
+    void deleteSceneConfig();
+  });
+  window.addEventListener("pointermove", handleSceneLayerDrag);
+  window.addEventListener("pointerup", stopSceneLayerDrag);
+  window.addEventListener("pointercancel", stopSceneLayerDrag);
 
   void loadCharacters();
 }

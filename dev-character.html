@@ -11,52 +11,89 @@
       <header class="asset-lab-header">
         <div>
           <p class="eyebrow">Character Settings Plugin</p>
-          <h1>캐릭터 설정</h1>
+          <h1>캐릭터 제작</h1>
         </div>
         <a class="asset-lab-back" href="./dev-assets.html">플러그인 목록</a>
       </header>
 
-      <nav class="asset-tool-nav" aria-label="Character setting pages">
-        <a href="./dev-character-create.html">캐릭터 만들기</a>
-        <a href="./dev-character-expression.html">Expression 등록</a>
-        <a href="./dev-character-set.html">Set 등록</a>
-        <a href="./dev-assets-layer.html">Layer 만들기</a>
-        <a href="./dev-character-scene.html">Scene 등록</a>
-        <a href="./dev-assets-crop.html">Crop</a>
-      </nav>
+      <nav class="asset-tool-nav" aria-label="Character setting pages" data-character-nav data-current-page="home"></nav>
 
-      <section class="asset-lab-grid" aria-label="Character setting links">
-        <article class="asset-lab-panel asset-tool-card">
-          <h2>캐릭터 만들기</h2>
-          <p>새 캐릭터 폴더와 기본 설정 파일을 만듭니다.</p>
-          <a href="./dev-character-create.html">캐릭터 만들기 열기</a>
-        </article>
-        <article class="asset-lab-panel asset-tool-card">
-          <h2>Expression 등록</h2>
-          <p>표정 이름에 사용할 base 이미지 후보를 연결합니다.</p>
-          <a href="./dev-character-expression.html">Expression 등록 열기</a>
-        </article>
-        <article class="asset-lab-panel asset-tool-card">
-          <h2>Set 등록</h2>
-          <p>Expression이 선택한 base 이미지에 붙을 Set 기본 정보를 저장합니다.</p>
-          <a href="./dev-character-set.html">Set 등록 열기</a>
-        </article>
-        <article class="asset-lab-panel asset-tool-card">
-          <h2>Layer 만들기</h2>
-          <p>저장된 Set 위에 눈, 입, 장식 같은 파츠 레이어를 붙입니다.</p>
-          <a href="./dev-assets-layer.html">Layer 만들기 열기</a>
-        </article>
-        <article class="asset-lab-panel asset-tool-card">
-          <h2>Scene 등록</h2>
-          <p>배경, 캐릭터 위치, 책상이나 소품, FX를 하나의 무대 조합으로 저장합니다.</p>
-          <a href="./dev-character-scene.html">Scene 등록 열기</a>
-        </article>
-        <article class="asset-lab-panel asset-tool-card">
-          <h2>Crop</h2>
-          <p>캐릭터 기준 이미지에서 파츠 제작에 쓸 영역을 잡습니다.</p>
-          <a href="./dev-assets-crop.html">Crop 열기</a>
-        </article>
+      <section class="asset-lab-grid asset-character-home-grid" aria-label="Character production dashboard">
+        <section class="asset-lab-panel">
+          <div class="asset-lab-section asset-character-home-hero">
+            <h2>단계대로 만들기</h2>
+            <p class="asset-lab-help">이미지 한 장으로 빠르게 시작해도 되고, 표정과 파츠를 추가해서 살아 움직이는 캐릭터로 확장할 수도 있어요.</p>
+            <div class="asset-lab-field-grid">
+              <label>
+                편집할 캐릭터
+                <select id="characterSelect">
+                  <option value="">캐릭터를 불러오는 중이에요.</option>
+                </select>
+              </label>
+              <div class="asset-character-home-actions">
+                <a class="asset-primary-link" href="./dev-character-create.html">새 캐릭터 만들기</a>
+                <button class="asset-danger-button" type="button" id="deleteCharacterButton" disabled>선택 캐릭터 삭제</button>
+              </div>
+            </div>
+            <p class="asset-lab-status" id="characterHomeStatus" role="status">캐릭터 제작 상태를 확인하는 중이에요.</p>
+          </div>
+
+          <div class="asset-lab-section">
+            <h2>작업 경로</h2>
+            <p class="asset-lab-help">npm으로 설치한 경우에도 실제 프로젝트의 캐릭터와 공통 에셋 폴더를 지정해서 사용합니다.</p>
+            <div class="asset-workspace-form">
+              <label>
+                캐릭터 소스 폴더
+                <input id="sourceCharactersInput" type="text" placeholder="src/characters" />
+              </label>
+              <label>
+                캐릭터 빌드 폴더
+                <input id="buildCharactersInput" type="text" placeholder="dist/characters" />
+              </label>
+              <label>
+                공통 에셋 폴더
+                <input id="commonAssetsInput" type="text" placeholder="src/assets/common" />
+              </label>
+              <label>
+                브라우저 캐릭터 경로 prefix
+                <input id="browserSourcePrefixInput" type="text" placeholder="./src/characters" />
+              </label>
+              <label>
+                브라우저 공통 에셋 prefix
+                <input id="browserCommonPrefixInput" type="text" placeholder="./src/assets/common" />
+              </label>
+              <label class="asset-lab-checkbox asset-inline-checkbox">
+                <span>localhost 접근 허용</span>
+                <input id="allowLocalhostInput" type="checkbox" checked />
+              </label>
+              <label>
+                추가 허용 IP
+                <textarea id="allowedIpsInput" rows="3" placeholder="192.168.0.12&#10;10.0.0.23"></textarea>
+              </label>
+            </div>
+            <div class="asset-lab-actions">
+              <button type="button" id="saveWorkspaceButton">작업 경로 저장</button>
+            </div>
+            <p class="asset-lab-note" id="workspaceResolvedText">작업 경로를 불러오는 중이에요.</p>
+          </div>
+
+          <div class="asset-lab-section">
+            <h2>현재 상태</h2>
+            <p class="asset-lab-help">선택한 캐릭터가 어느 단계까지 준비되었는지 보여줍니다. 필요한 단계부터 이어서 작업하세요.</p>
+            <div class="asset-character-summary" id="characterSummary" aria-live="polite"></div>
+          </div>
+        </section>
+
+        <section class="asset-lab-panel">
+          <div class="asset-lab-section">
+            <h2>제작 순서</h2>
+            <p class="asset-lab-help">각 단계는 이전 단계 결과를 재료로 사용합니다. 처음이라면 위에서 아래로 진행하면 됩니다.</p>
+            <div class="asset-character-step-list" id="characterStepList" aria-live="polite"></div>
+          </div>
+        </section>
       </section>
     </main>
+    <script type="module" src="./dist/devtools/assetCharacterNav.js"></script>
+    <script type="module" src="./dist/devtools/assetCharacterHome.js"></script>
   </body>
 </html>

@@ -10,6 +10,8 @@
 - 변경 전 먼저 관련 파일과 구조를 파악한다.
 - 코드 수정은 효율성, 재사용성, 공통 처리 가능성을 우선 고려한다.
 - 중복 구현보다 공통 컴포넌트/유틸/훅 분리를 우선 검토한다.
+- 단일 화면의 빠른 해결보다 같은 유형의 문제를 공통 처리할 수 있는지 먼저 검토한다.
+- 하드코딩된 값, 임시 분기, 특정 데이터 전용 처리는 피하고 필요할 경우 이유와 적용 범위를 명확히 한다.
 - 기존 스타일, 네이밍, 폴더 구조를 최대한 따른다.
 - 불필요한 대규모 리팩토링은 하지 않는다.
 - 새 패키지 추가 전 반드시 이유를 설명하고 확인을 받는다.
@@ -25,6 +27,8 @@
 - 모바일 화면 기준 레이아웃 깨짐을 우선 확인한다.
 - Tailwind 클래스는 중복을 줄이고 일관된 spacing/token을 사용한다.
 - 디자인 변경은 기존 분위기를 유지하면서 점진적으로 적용한다.
+- UI 정렬과 크기 보정은 고정 height/width보다 flex/grid 정렬, padding, line-height, min/max 제약 등 재사용 가능한 CSS 규칙을 우선 사용한다.
+- 버튼, 입력, 카드, 상태 메시지처럼 반복되는 UI는 개별 페이지 스타일보다 공통 클래스나 공통 컴포넌트로 처리할 수 있는지 먼저 확인한다.
 
 
 # AI Harness Prompt
@@ -85,6 +89,7 @@
 - Do not rewrite unrelated files.
 - Do not introduce a new architecture without permission.
 - Prefer existing services, hooks, repositories, and components.
+- Prefer reusable shared handling over one-off hardcoded fixes.
 - Follow current naming conventions.
 - Keep changes minimal and localized.
 - Do not duplicate business logic.

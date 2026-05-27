@@ -206,6 +206,73 @@ export function resolveAssetPath(basePath: string, fileName: string) {
 }
 
 /**
+ * Mirrors status text into a visible toast and marks the status tone.
+ */
+export function enhanceStatusNotice(status: HTMLElement) {
+  let hideTimerId: number | null = null;
+  let lastMessage = status.textContent?.trim() ?? "";
+  const toast = document.createElement("div");
+
+  toast.className = "asset-status-toast";
+  toast.setAttribute("role", "alert");
+  toast.setAttribute("aria-live", "assertive");
+  document.body.append(toast);
+
+  const showNotice = () => {
+    const message = status.textContent?.trim() ?? "";
+
+    if (!message || message === lastMessage) {
+      return;
+    }
+
+    lastMessage = message;
+
+    const tone = getStatusTone(message);
+
+    status.dataset.tone = tone;
+    toast.dataset.tone = tone;
+    toast.textContent = message;
+    toast.classList.add("is-visible");
+
+    if (hideTimerId !== null) {
+      window.clearTimeout(hideTimerId);
+    }
+
+    hideTimerId = window.setTimeout(() => {
+      toast.classList.remove("is-visible");
+      hideTimerId = null;
+    }, tone === "progress" ? 1800 : 3600);
+  };
+
+  status.dataset.tone = getStatusTone(lastMessage);
+
+  new MutationObserver(showNotice).observe(status, {
+    characterData: true,
+    childList: true,
+    subtree: true,
+  });
+}
+
+/**
+ * Infers a visual tone from user-facing status copy.
+ */
+function getStatusTone(message: string) {
+  if (/중이에요|준비|확인/.test(message)) {
+    return "progress";
+  }
+
+  if (/완료|저장했|저장 완료|만들었|불러왔|복사|받았/.test(message)) {
+    return "success";
+  }
+
+  if (/실패|못|먼저|입력|선택|필요|없어요|삭제할|오류|error/i.test(message)) {
+    return "warning";
+  }
+
+  return "info";
+}
+
+/**
  * Loads an image element before canvas drawing.
  */
 function loadImage(dataUrl: string) {

@@ -1,7 +1,18 @@
 {
   "extensions": {
     "character-settings": {
-      "enabled": true
+      "enabled": true,
+      "devServer": {
+        "allowLocalhost": true,
+        "allowedIps": []
+      },
+      "workspace": {
+        "sourceCharacters": "src/characters",
+        "buildCharacters": "dist/characters",
+        "commonAssets": "src/assets/common",
+        "browserSourcePrefix": "./src/characters",
+        "browserCommonPrefix": "./src/assets/common"
+      }
     },
     "comfy-asset-generator": {
       "enabled": true,

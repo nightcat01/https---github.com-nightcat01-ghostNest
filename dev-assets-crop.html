@@ -10,24 +10,21 @@
     <main class="asset-lab-shell">
       <header class="asset-lab-header">
         <div>
-          <p class="eyebrow">GhostNest Character Settings</p>
+          <p class="eyebrow">Helper / Character Settings</p>
           <h1>Crop</h1>
         </div>
-        <a class="asset-lab-back" href="./dev-character.html">캐릭터 설정</a>
+        <a class="asset-lab-back" href="./dev-character.html">제작 홈</a>
       </header>
 
-      <nav class="asset-tool-nav" aria-label="Character setting pages">
-        <a href="./dev-character.html">설정 홈</a>
-        <a href="./dev-character-create.html">캐릭터 만들기</a>
-        <a href="./dev-character-expression.html">Expression 등록</a>
-        <a href="./dev-character-set.html">Set 등록</a>
-        <a href="./dev-assets-layer.html">Layer 만들기</a>
-        <a href="./dev-character-scene.html">Scene 등록</a>
-        <a aria-current="page" href="./dev-assets-crop.html">Crop</a>
-      </nav>
+      <nav class="asset-tool-nav" aria-label="Character setting pages" data-character-nav data-current-page="crop"></nav>
 
       <section class="asset-lab-grid" aria-label="Crop tool">
         <section class="asset-lab-panel">
+          <div class="asset-lab-section asset-step-intro">
+            <h2>이 도구를 쓰는 때</h2>
+            <p class="asset-lab-help">base 이미지에서 눈, 입 같은 파츠를 만들 영역을 잡을 때 사용합니다. 영역 값은 파츠 / 애니메이션 단계의 위치 기준으로도 이어집니다.</p>
+          </div>
+
           <div class="asset-lab-section">
             <h2>이미지와 영역</h2>
             <label>
@@ -35,7 +32,7 @@
               <select id="partRecipeSelect" name="partRecipe">
                 <option value="eyeBlink">눈 깜빡임</option>
                 <option value="mouthShapes">입모양</option>
-                <option value="expressionSet">표정 세트</option>
+                <option value="expressionSet">표정 파츠</option>
               </select>
             </label>
             <label>
@@ -48,12 +45,13 @@
               <label>W <input id="targetRegionWidthInput" type="number" min="1" max="100" step="1" /></label>
               <label>H <input id="targetRegionHeightInput" type="number" min="1" max="100" step="1" /></label>
             </div>
-            <label class="asset-lab-checkbox">
+            <label class="asset-lab-checkbox asset-inline-checkbox">
               <input id="regionOverlayVisibleInput" type="checkbox" checked />
               <span>영역 테두리 표시</span>
             </label>
             <div class="asset-lab-actions">
               <button type="button" id="downloadCropButton">Crop 다운로드</button>
+              <a class="asset-primary-link" href="./dev-assets-layer.html">파츠 단계로 돌아가기</a>
             </div>
             <p class="asset-lab-status" id="cropStatus" role="status">기준 이미지를 선택하면 영역을 확인할 수 있어요.</p>
           </div>
@@ -67,6 +65,7 @@
         </section>
       </section>
     </main>
+    <script type="module" src="./dist/devtools/assetCharacterNav.js"></script>
     <script type="module" src="./dist/devtools/assetCrop.js"></script>
   </body>
 </html>

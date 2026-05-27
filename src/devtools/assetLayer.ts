@@ -1,4 +1,5 @@
 import {
+  enhanceStatusNotice,
   LabImage,
   loadRegionOverlayVisible,
   loadStoredRegion,
@@ -11,6 +12,13 @@ import {
   saveStoredRegion,
   TargetRegion,
 } from "./assetShared.js";
+import {
+  createSavedAssetPaths,
+  isUploadImage,
+  saveUploadedAssetFiles,
+} from "./assetUpload.js";
+import { populateCharacterSelect } from "./assetCharacterSelect.js";
+import { appendAssetOptionGroups, createAssetOptionLabel, filterAssetFiles } from "./assetSelect.js";
 
 type SaveResponse = {
   ok?: boolean;
@@ -22,12 +30,6 @@ type SaveResponse = {
     surfaceId: string;
     layerId: string;
   };
-};
-type SaveAssetFilesResponse = {
-  ok?: boolean;
-  error?: string;
-  message?: string;
-  saved?: Array<{ fileName: string; path: string }>;
 };
 type DeleteResponse = {
   ok?: boolean;
@@ -43,12 +45,6 @@ type CharacterLayerSaveTarget = {
   layerId: string;
 };
 
-type CharacterListResponse = {
-  ok?: boolean;
-  error?: string;
-  message?: string;
-  characters?: string[];
-};
 type AssetFile = {
   fileName: string;
   kind: "base" | "part" | "scene" | "asset";
@@ -206,6 +202,9 @@ const copyManifestButton = requireElement(document.querySelector<HTMLButtonEleme
 const previousFrameButton = requireElement(document.querySelector<HTMLButtonElement>("#previousFrameButton"), "#previousFrameButton");
 const playFramesButton = requireElement(document.querySelector<HTMLButtonElement>("#playFramesButton"), "#playFramesButton");
 const nextFrameButton = requireElement(document.querySelector<HTMLButtonElement>("#nextFrameButton"), "#nextFrameButton");
+const previewSizeInput = requireElement(document.querySelector<HTMLInputElement>("#previewSizeInput"), "#previewSizeInput");
+const previewZoomOutButton = requireElement(document.querySelector<HTMLButtonElement>("#previewZoomOutButton"), "#previewZoomOutButton");
+const previewZoomInButton = requireElement(document.querySelector<HTMLButtonElement>("#previewZoomInButton"), "#previewZoomInButton");
 const regionOverlayVisibleInput = requireElement(document.querySelector<HTMLInputElement>("#regionOverlayVisibleInput"), "#regionOverlayVisibleInput");
 const regionInputs = {
   x: requireElement(document.querySelector<HTMLInputElement>("#targetRegionXInput"), "#targetRegionXInput"),
@@ -228,6 +227,7 @@ type StoredLayerSettings = {
   saveDirectory?: string;
   baseAssetPath?: string;
   partAssetPaths?: string[];
+  previewSize?: number;
 };
 
 /**
@@ -249,13 +249,6 @@ function createCharacterAssetBasePath(assetSaveKind: AssetSaveKind) {
  */
 function createCharacterAssetSaveDirectory(assetSaveKind: AssetSaveKind) {
   return `src/characters/${getActiveCharacterId()}/assets/${assetSaveKind}`;
-}
-
-/**
- * Returns whether an image came from a browser upload and can be written to disk.
- */
-function isUploadImage(image: LayerImage | LabImage | null | undefined): image is LayerImage {
-  return Boolean(image?.dataUrl.startsWith("data:"));
 }
 
 /**
@@ -284,6 +277,29 @@ function syncAssetSavePathsFromKind() {
 
   basePathInput.value = createCharacterAssetBasePath(assetSaveKind);
   saveDirectoryInput.value = createCharacterAssetSaveDirectory(assetSaveKind);
+}
+
+/**
+ * Clamps the layer preview size so zoom controls cannot break the page layout.
+ */
+function clampPreviewSize(value: number) {
+  return Math.min(1200, Math.max(320, value));
+}
+
+/**
+ * Reads the current preview width used by the composite stage.
+ */
+function getPreviewSize() {
+  return clampPreviewSize(Number(previewSizeInput.value) || 680);
+}
+
+/**
+ * Applies a preview zoom size and refreshes the current stage.
+ */
+function setPreviewSize(size: number) {
+  previewSizeInput.value = String(clampPreviewSize(size));
+  renderPreview();
+  saveLayerSettings();
 }
 
 /**
@@ -320,6 +336,7 @@ function saveLayerSettings() {
     basePath: basePathInput.value,
     saveDirectory: saveDirectoryInput.value,
     partAssetPaths: partImages.map((image) => image.assetPath).filter((assetPath): assetPath is string => Boolean(assetPath)),
+    previewSize: getPreviewSize(),
     ...(baseAssetPath ? { baseAssetPath } : {}),
   };
 
@@ -355,6 +372,7 @@ function loadLayerSettings() {
     assetSaveKindSelect.value = settings.assetSaveKind ?? inferAssetSaveKind(settings);
     basePathInput.value = settings.basePath ?? createCharacterAssetBasePath(getAssetSaveKind());
     saveDirectoryInput.value = settings.saveDirectory ?? createCharacterAssetSaveDirectory(getAssetSaveKind());
+    previewSizeInput.value = String(clampPreviewSize(settings.previewSize ?? Number(previewSizeInput.value) ?? 680));
   } catch {
     // 저장된 개발도구 설정이 깨져도 페이지 사용은 계속 가능해야 합니다.
   }
@@ -652,10 +670,8 @@ function createSavedAssetImage(assetFile: AssetFile): LayerImage {
  * Keeps saved asset pickers in sync with the selected character.
  */
 function renderSavedAssetOptions() {
-  const baseAssets = savedAssetFiles.filter((assetFile) => assetFile.kind === "base" && assetFile.scope !== "common");
-  const partAssets = savedAssetFiles.filter((assetFile) => assetFile.kind === "part");
-  const characterPartAssets = partAssets.filter((assetFile) => assetFile.scope !== "common");
-  const commonPartAssets = partAssets.filter((assetFile) => assetFile.scope === "common");
+  const baseAssets = filterAssetFiles(savedAssetFiles, ["base"], { includeCommon: false });
+  const partAssets = filterAssetFiles(savedAssetFiles, ["part"]);
 
   baseAssetSelect.replaceChildren(new Option(baseAssets.length > 0 ? "기본 이미지 초기화" : "assets/base 이미지가 없어요.", ""));
   partAssetSelect.replaceChildren();
@@ -667,41 +683,12 @@ function renderSavedAssetOptions() {
   }
 
   baseAssets.forEach((assetFile) => {
-    const label = createSavedAssetOptionLabel(assetFile);
-
-    baseAssetSelect.append(new Option(label, assetFile.path));
+    baseAssetSelect.append(new Option(createAssetOptionLabel(assetFile), assetFile.path));
   });
-  appendAssetOptionGroup(partAssetSelect, "캐릭터 parts", characterPartAssets);
-  appendAssetOptionGroup(partAssetSelect, "공통 parts", commonPartAssets);
-}
-
-/**
- * Appends a visible option group so shared parts are not hidden among character files.
- */
-function appendAssetOptionGroup(select: HTMLSelectElement, label: string, assetFiles: AssetFile[]) {
-  if (assetFiles.length === 0) {
-    return;
-  }
-
-  const group = document.createElement("optgroup");
-
-  group.label = `${label} (${assetFiles.length})`;
-  assetFiles.forEach((assetFile) => {
-    group.append(new Option(createSavedAssetOptionLabel(assetFile), assetFile.path));
+  appendAssetOptionGroups(partAssetSelect, partAssets, {
+    character: "캐릭터 parts",
+    common: "공통 parts",
   });
-  select.append(group);
-}
-
-/**
- * Labels saved assets with their scope so common resources are easy to spot.
- */
-function createSavedAssetOptionLabel(assetFile: AssetFile) {
-  const trimmedPath = assetFile.path
-    .replace("./src/characters/", "")
-    .replace("./src/assets/common/", "common/");
-  const prefix = assetFile.scope === "common" ? "common / " : "";
-
-  return `${prefix}${trimmedPath}`;
 }
 
 /**
@@ -716,13 +703,32 @@ function syncSelectedAssetImagesFromControls() {
 
   if (selectedBaseAsset) {
     baseImage = createSavedAssetImage(selectedBaseAsset);
+  } else if (baseAssetSelect.value === "" || !savedAssetFiles.some((assetFile) => assetFile.path === baseAssetSelect.value)) {
+    baseImage = null;
   }
 
   if (selectedPartAssets.length > 0) {
     partImages = selectedPartAssets.map(createSavedAssetImage);
     selectedFrameIndex = 0;
     isPreviewingBaseFrame = false;
+  } else if (Array.from(partAssetSelect.selectedOptions).every((option) => option.value === "")) {
+    partImages = [];
+    selectedFrameIndex = 0;
+    isPreviewingBaseFrame = false;
   }
+}
+
+/**
+ * Clears character-scoped preview state before loading another character.
+ */
+function resetCharacterPreviewState() {
+  stopPlayback();
+  baseImage = null;
+  partImages = [];
+  selectedFrameIndex = 0;
+  isPreviewingBaseFrame = false;
+  baseImageInput.value = "";
+  partImagesInput.value = "";
 }
 
 /**
@@ -791,27 +797,11 @@ async function uploadAssetImages(assetKind: AssetSaveKind, images: LayerImage[])
   status.textContent = `${assetKind} 폴더에 이미지 ${images.length}개를 저장하는 중이에요.`;
 
   try {
-    const response = await fetch("/api/devtools/save-asset-files", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        directory: createCharacterAssetSaveDirectory(assetKind),
-        images: images.map((image) => ({
-          fileName: image.fileName,
-          dataUrl: image.dataUrl,
-        })),
-      }),
-    });
-    const result = await readApiJson<SaveAssetFilesResponse>(response);
-
-    if (!response.ok || !result.ok) {
-      status.textContent = result.message ?? `이미지 저장 실패: ${result.error ?? response.status}`;
-      return;
-    }
+    const savedFiles = await saveUploadedAssetFiles(createCharacterAssetSaveDirectory(assetKind), images);
 
     await loadSavedAssetFiles();
 
-    const savedPaths = (result.saved ?? []).map((savedFile) => `./${savedFile.path}`);
+    const savedPaths = createSavedAssetPaths(savedFiles);
 
     if (assetKind === "base") {
       baseAssetSelect.value = savedPaths[0] ?? "";
@@ -823,7 +813,7 @@ async function uploadAssetImages(assetKind: AssetSaveKind, images: LayerImage[])
       applySavedPartAssets();
     }
 
-    status.textContent = `${assetKind} 폴더에 이미지 ${result.saved?.length ?? 0}개를 저장했어요.`;
+    status.textContent = `${assetKind} 폴더에 이미지 ${savedFiles.length}개를 저장했어요.`;
   } catch (error) {
     status.textContent = error instanceof Error ? error.message : "이미지 저장 요청에 실패했어요.";
   } finally {
@@ -984,9 +974,11 @@ function restoreLayerSelection() {
   if (matchingSurface) {
     surfaceSelect.value = matchingSurface.surfaceId;
     surfaceIdInput.value = matchingSurface.surfaceId;
+    baseImage = matchingSurface.image ? createAssetPathImage(matchingSurface.image) : null;
   } else if (surfaceSelect.value !== newSurfaceSelectValue) {
     surfaceSelect.value = newSurfaceSelectValue;
     surfaceIdInput.value = preferredSurfaceId;
+    baseImage = null;
   }
 
   renderLayerOptionsForSurface();
@@ -1091,6 +1083,7 @@ async function loadCharacterAssets() {
   const characterId = characterSelect.value || characterIdInput.value.trim() || "rine";
 
   characterIdInput.value = characterId;
+  resetCharacterPreviewState();
   surfaceSelect.replaceChildren(new Option("Surface를 불러오는 중이에요.", ""));
   existingLayerSelect.replaceChildren(new Option("Surface를 먼저 선택하세요.", ""));
   existingSurfaces = [];
@@ -1190,7 +1183,6 @@ async function loadCharacterAssets() {
     await loadSavedAssetFiles();
     restoreSavedAssetSelection();
     restoreLayerSelection();
-    syncSelectedAssetImagesFromControls();
     renderOutputs();
     status.textContent = `${characterId} 캐릭터를 불러왔어요. Surface를 선택하세요.`;
   } catch (error) {
@@ -1210,28 +1202,13 @@ async function loadCharacterAssets() {
 async function loadCharacters() {
   const preferredCharacterId = characterIdInput.value.trim() || "rine";
 
-  characterSelect.replaceChildren(new Option("캐릭터를 불러오는 중이에요.", ""));
-
   try {
-    const response = await fetch("/api/devtools/characters");
-    const result = await readApiJson<CharacterListResponse>(response);
-
-    if (!response.ok || !result.ok) {
-      throw new Error(result.message ?? result.error ?? "캐릭터 목록을 불러오지 못했어요.");
-    }
-
-    const characters = result.characters ?? [];
-
-    characterSelect.replaceChildren(new Option("캐릭터 선택", ""));
-    characters.forEach((characterId) => {
-      characterSelect.append(new Option(characterId, characterId));
+    const selectedCharacterId = await populateCharacterSelect(characterSelect, {
+      emptyLabel: "캐릭터 선택",
+      preferredCharacterId,
     });
 
-    characterSelect.value = characters.includes(preferredCharacterId)
-      ? preferredCharacterId
-      : characters[0] ?? "";
-
-    if (characterSelect.value) {
+    if (selectedCharacterId) {
       if (!storedLayerSettings?.basePath && !storedLayerSettings?.saveDirectory) {
         syncAssetSavePathsFromKind();
       }
@@ -1650,7 +1627,7 @@ function renderPreview() {
 
   const stage = document.createElement("div");
   stage.className = "asset-composite-stage";
-  stage.style.setProperty("--asset-composite-width", "680px");
+  stage.style.setProperty("--asset-composite-width", `${getPreviewSize()}px`);
 
   if (baseImage) {
     const base = document.createElement("img");
@@ -1867,6 +1844,7 @@ function togglePlayback() {
  * Wires layer page controls.
  */
 function init() {
+  enhanceStatusNotice(status);
   loadLayerSettings();
   regionOverlayVisibleInput.checked = loadRegionOverlayVisible();
   if (!storedLayerSettings) {
@@ -1910,6 +1888,15 @@ function init() {
   baseAssetSelect.addEventListener("change", applySavedBaseAsset);
   uploadPartAssetsButton.addEventListener("click", () => {
     void uploadAssetImages("parts", partImages.filter(isUploadImage));
+  });
+  previewSizeInput.addEventListener("input", () => {
+    setPreviewSize(getPreviewSize());
+  });
+  previewZoomOutButton.addEventListener("click", () => {
+    setPreviewSize(getPreviewSize() - 80);
+  });
+  previewZoomInButton.addEventListener("click", () => {
+    setPreviewSize(getPreviewSize() + 80);
   });
   assetSaveKindSelect.addEventListener("change", () => {
     syncAssetSavePathsFromKind();

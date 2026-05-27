@@ -10,27 +10,30 @@
     <main class="asset-lab-shell">
       <header class="asset-lab-header">
         <div>
-          <p class="eyebrow">Character Settings Plugin</p>
-          <h1>Expression 등록</h1>
+          <p class="eyebrow">Step 2 / Character Settings</p>
+          <h1>표정 이미지 등록</h1>
         </div>
-        <a class="asset-lab-back" href="./dev-character.html">캐릭터 설정</a>
+        <a class="asset-lab-back" href="./dev-character.html">제작 홈</a>
       </header>
 
-      <nav class="asset-tool-nav" aria-label="Character setting pages">
-        <a href="./dev-character.html">설정 홈</a>
-        <a href="./dev-character-create.html">캐릭터 만들기</a>
-        <a aria-current="page" href="./dev-character-expression.html">Expression 등록</a>
-        <a href="./dev-character-set.html">Set 등록</a>
-        <a href="./dev-assets-layer.html">Layer 만들기</a>
-        <a href="./dev-character-scene.html">Scene 등록</a>
-        <a href="./dev-assets-crop.html">Crop</a>
-      </nav>
+      <nav class="asset-tool-nav" aria-label="Character setting pages" data-character-nav data-current-page="expression"></nav>
 
       <section class="asset-lab-grid" aria-label="Expression settings">
         <section class="asset-lab-panel">
+          <div class="asset-lab-section asset-step-intro">
+            <h2>이 단계에서 하는 일</h2>
+            <p class="asset-lab-help">표정 이름에 base 이미지 후보를 묶습니다. 여러 장을 선택하면 같은 표정 안에서 랜덤 후보로 쓸 수 있어요.</p>
+            <ol class="asset-step-guide">
+              <li>캐릭터를 선택합니다.</li>
+              <li>표정 이름을 고르거나 새로 만듭니다.</li>
+              <li>이 표정에 사용할 base 이미지 후보를 선택합니다.</li>
+              <li>미리보기를 확인하고 저장합니다.</li>
+            </ol>
+          </div>
+
           <div class="asset-lab-section">
             <h2>캐릭터</h2>
-            <p class="asset-lab-help">Expression을 저장할 캐릭터 폴더를 선택합니다.</p>
+            <p class="asset-lab-help">표정 이미지를 저장할 캐릭터를 선택합니다.</p>
             <label>
               캐릭터
               <select id="characterSelect">
@@ -40,39 +43,67 @@
           </div>
 
           <div class="asset-lab-section">
-            <h2>Expression 이미지 후보</h2>
-            <p class="asset-lab-help">표정 이름이 먼저 base 이미지 후보를 고릅니다. 여러 장을 선택하면 런타임에서 랜덤으로 사용합니다.</p>
+            <h2>표정과 이미지 후보</h2>
+            <p class="asset-lab-help">여기서 고른 이미지는 다음 단계에서 캐릭터 상태의 기준 이미지가 됩니다.</p>
             <div class="asset-lab-field-grid">
               <label>
-                Expression
+                표정 이름
                 <select id="expressionSelect">
                   <option value="neutral">neutral</option>
                   <option value="happy">happy</option>
                   <option value="thinking">thinking</option>
                   <option value="surprised">surprised</option>
-                  <option value="__new_expression__">새 Expression 추가</option>
+                  <option value="__new_expression__">새 표정 추가</option>
                 </select>
               </label>
               <label id="customExpressionField" hidden>
-                새 Expression 이름
+                새 표정 이름
                 <input id="customExpressionInput" type="text" placeholder="예: shy" autocomplete="off" />
               </label>
               <label>
                 연결할 base 이미지
                 <select id="expressionAssetSelect" multiple size="8">
-                  <option value="">저장된 에셋을 불러오는 중이에요.</option>
+                  <option value="">저장된 base 이미지를 불러오는 중이에요.</option>
                 </select>
               </label>
             </div>
           </div>
 
-          <div class="asset-lab-section asset-composition-save-section">
-            <h2>저장</h2>
-            <p class="asset-lab-help">선택한 base 이미지 목록을 assets.expressions에 저장합니다. 이후 Set 등록에서 이 후보 중 하나를 base로 선택합니다.</p>
-            <div class="asset-lab-actions">
-              <button type="button" id="saveExpressionButton">Expression 저장</button>
+          <div class="asset-lab-section">
+            <h2>이미지 등록</h2>
+            <p class="asset-lab-help">새 이미지를 바로 캐릭터 에셋 폴더에 저장합니다. 표정 후보로 쓸 이미지는 base에 저장하세요.</p>
+            <div class="asset-lab-field-grid">
+              <label>
+                저장 위치
+                <select id="uploadAssetKindSelect">
+                  <option value="base">base - 표정 후보 이미지</option>
+                  <option value="parts">parts - 파츠 이미지</option>
+                  <option value="scenes">scenes - 배경 / 소품 이미지</option>
+                </select>
+              </label>
+              <label>
+                이미지 파일
+                <input id="expressionImageInput" type="file" accept="image/*" multiple />
+              </label>
             </div>
-            <p class="asset-lab-status" id="expressionStatus" role="status">Expression을 등록할 준비가 됐어요.</p>
+            <div class="asset-lab-actions">
+              <button type="button" id="uploadExpressionImagesButton">선택 이미지 저장</button>
+            </div>
+          </div>
+
+          <div class="asset-lab-section asset-composition-save-section">
+            <div class="asset-lab-section-header">
+              <div>
+                <h2>저장</h2>
+                <p class="asset-lab-help">선택한 base 이미지 목록을 캐릭터의 표정 후보로 저장합니다.</p>
+              </div>
+              <div class="asset-lab-actions">
+                <button type="button" id="saveExpressionButton">표정 이미지 저장</button>
+                <button class="asset-danger-button" type="button" id="deleteExpressionButton">선택 표정 삭제</button>
+                <a class="asset-primary-link" href="./dev-character-set.html">다음: 캐릭터 상태 만들기</a>
+              </div>
+            </div>
+            <p class="asset-lab-status" id="expressionStatus" role="status">표정 이미지 등록을 준비하고 있어요.</p>
           </div>
         </section>
 
@@ -81,10 +112,14 @@
             <h2>이미지 미리보기</h2>
           </div>
           <div class="asset-expression-preview-grid" id="expressionPreviewGrid" aria-live="polite"></div>
-          <pre id="expressionOutput" aria-live="polite"></pre>
+          <details class="asset-debug-details">
+            <summary>저장 데이터 보기</summary>
+            <pre id="expressionOutput" aria-live="polite"></pre>
+          </details>
         </section>
       </section>
     </main>
+    <script type="module" src="./dist/devtools/assetCharacterNav.js"></script>
     <script type="module" src="./dist/devtools/assetExpression.js"></script>
   </body>
 </html>
