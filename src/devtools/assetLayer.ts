@@ -13,12 +13,14 @@ import {
   TargetRegion,
 } from "./assetShared.js";
 import {
+  createCharacterAssetBrowserBasePath,
   createSavedAssetPaths,
   isUploadImage,
   saveUploadedAssetFiles,
 } from "./assetUpload.js";
 import { populateCharacterSelect } from "./assetCharacterSelect.js";
 import { appendAssetOptionGroups, createAssetOptionLabel, filterAssetFiles } from "./assetSelect.js";
+import { createDevtoolsApiPath } from "./assetApi.js";
 
 type SaveResponse = {
   ok?: boolean;
@@ -60,7 +62,7 @@ type AssetFilesResponse = {
   files?: AssetFile[];
 };
 type LayerImage = LabImage & { assetPath?: string };
-type AssetSaveKind = "base" | "parts";
+type AssetSaveKind = "base" | "parts" | "scenes";
 type RegionDragMode = "move" | "resize-nw" | "resize-ne" | "resize-se" | "resize-sw";
 type RegionDragState = {
   mode: RegionDragMode;
@@ -240,8 +242,8 @@ function getActiveCharacterId() {
 /**
  * Builds the browser-facing asset path prefix for the selected character folder.
  */
-function createCharacterAssetBasePath(assetSaveKind: AssetSaveKind) {
-  return `./src/characters/${getActiveCharacterId()}/assets/${assetSaveKind}/`;
+async function createCharacterAssetBasePath(assetSaveKind: AssetSaveKind) {
+  return createCharacterAssetBrowserBasePath(getActiveCharacterId(), assetSaveKind);
 }
 
 /**
@@ -255,7 +257,11 @@ function createCharacterAssetSaveDirectory(assetSaveKind: AssetSaveKind) {
  * Reads the current folder choice while keeping unknown values on the safer parts path.
  */
 function getAssetSaveKind(): AssetSaveKind {
-  return assetSaveKindSelect.value === "base" ? "base" : "parts";
+  if (assetSaveKindSelect.value === "base" || assetSaveKindSelect.value === "scenes") {
+    return assetSaveKindSelect.value;
+  }
+
+  return "parts";
 }
 
 /**
@@ -266,16 +272,18 @@ function inferAssetSaveKind(settings: StoredLayerSettings | null): AssetSaveKind
 
   return configuredPath.includes("/assets/base") || configuredPath.includes("\\assets\\base")
     ? "base"
+    : configuredPath.includes("/assets/scenes") || configuredPath.includes("\\assets\\scenes")
+      ? "scenes"
     : "parts";
 }
 
 /**
  * Applies the selected character asset folder to both editable path fields.
  */
-function syncAssetSavePathsFromKind() {
+async function syncAssetSavePathsFromKind() {
   const assetSaveKind = getAssetSaveKind();
 
-  basePathInput.value = createCharacterAssetBasePath(assetSaveKind);
+  basePathInput.value = await createCharacterAssetBasePath(assetSaveKind);
   saveDirectoryInput.value = createCharacterAssetSaveDirectory(assetSaveKind);
 }
 
@@ -283,14 +291,14 @@ function syncAssetSavePathsFromKind() {
  * Clamps the layer preview size so zoom controls cannot break the page layout.
  */
 function clampPreviewSize(value: number) {
-  return Math.min(1200, Math.max(320, value));
+  return Math.min(1400, Math.max(480, value));
 }
 
 /**
  * Reads the current preview width used by the composite stage.
  */
 function getPreviewSize() {
-  return clampPreviewSize(Number(previewSizeInput.value) || 680);
+  return clampPreviewSize(Number(previewSizeInput.value) || 760);
 }
 
 /**
@@ -298,8 +306,22 @@ function getPreviewSize() {
  */
 function setPreviewSize(size: number) {
   previewSizeInput.value = String(clampPreviewSize(size));
-  renderPreview();
+  updatePreviewSize();
   saveLayerSettings();
+}
+
+/**
+ * Updates preview scale without rebuilding image nodes, avoiding layout flicker.
+ */
+function updatePreviewSize() {
+  const stage = layerPreview.querySelector<HTMLElement>(".asset-composite-stage");
+
+  if (!stage) {
+    renderPreview();
+    return;
+  }
+
+  stage.style.setProperty("--asset-composite-width", `${getPreviewSize()}px`);
 }
 
 /**
@@ -370,9 +392,13 @@ function loadLayerSettings() {
     idleIntervalInput.value = String(settings.idleIntervalMs ?? Number(idleIntervalInput.value) ?? 0);
     coversBaseInput.checked = settings.coversBase ?? coversBaseInput.checked;
     assetSaveKindSelect.value = settings.assetSaveKind ?? inferAssetSaveKind(settings);
-    basePathInput.value = settings.basePath ?? createCharacterAssetBasePath(getAssetSaveKind());
+    if (settings.basePath) {
+      basePathInput.value = settings.basePath;
+    } else {
+      void syncAssetSavePathsFromKind();
+    }
     saveDirectoryInput.value = settings.saveDirectory ?? createCharacterAssetSaveDirectory(getAssetSaveKind());
-    previewSizeInput.value = String(clampPreviewSize(settings.previewSize ?? Number(previewSizeInput.value) ?? 680));
+    previewSizeInput.value = String(clampPreviewSize(settings.previewSize ?? Number(previewSizeInput.value) ?? 760));
   } catch {
     // 저장된 개발도구 설정이 깨져도 페이지 사용은 계속 가능해야 합니다.
   }
@@ -642,7 +668,7 @@ function renderLayerSelectionStep() {
  * Builds asset paths from selected local part files.
  */
 function getPartPaths() {
-  const basePath = basePathInput.value.trim() || "./src/characters/rine/generated/";
+  const basePath = basePathInput.value.trim() || `./src/characters/${getActiveCharacterId()}/assets/${getAssetSaveKind()}/`;
 
   return partImages.map((image) => image.assetPath ?? resolveAssetPath(basePath, image.fileName));
 }
@@ -787,7 +813,7 @@ async function uploadAssetImages(assetKind: AssetSaveKind, images: LayerImage[])
   if (images.length === 0) {
     status.textContent = assetKind === "base"
       ? "base에 저장할 기준 이미지를 먼저 선택하세요."
-      : "parts에 저장할 파츠 이미지를 먼저 선택하세요.";
+      : `${assetKind}에 저장할 이미지를 먼저 선택하세요.`;
     return;
   }
 
@@ -890,7 +916,7 @@ async function loadSavedAssetFiles() {
   partAssetSelect.replaceChildren(new Option("저장된 에셋을 불러오는 중이에요.", ""));
 
   try {
-    const response = await fetch(`/api/devtools/asset-files?characterId=${encodeURIComponent(characterId)}`);
+    const response = await fetch(createDevtoolsApiPath(`/api/devtools/asset-files?characterId=${encodeURIComponent(characterId)}`));
     const result = await readApiJson<AssetFilesResponse>(response);
 
     if (!response.ok || !result.ok) {
@@ -941,7 +967,9 @@ function restoreSavedAssetSelection() {
   const partAssetPaths = storedLayerSettings?.partAssetPaths ?? [];
 
   if (baseAssetPath) {
-    const baseAssetFile = savedAssetFiles.find((assetFile) => assetFile.path === baseAssetPath && assetFile.kind === "base");
+    const baseAssetFile = savedAssetFiles.find((assetFile) =>
+      assetFile.path === baseAssetPath && assetFile.kind === "base",
+    );
 
     if (baseAssetFile) {
       baseAssetSelect.value = baseAssetFile.path;
@@ -1091,7 +1119,7 @@ async function loadCharacterAssets() {
   renderOutputs();
 
   try {
-    const response = await fetch(`/api/devtools/character-assets?characterId=${encodeURIComponent(characterId)}`);
+    const response = await fetch(createDevtoolsApiPath(`/api/devtools/character-assets?characterId=${encodeURIComponent(characterId)}`));
     const result = await readApiJson<CharacterAssetsResponse>(response);
 
     if (!response.ok || !result.ok) {
@@ -1210,7 +1238,7 @@ async function loadCharacters() {
 
     if (selectedCharacterId) {
       if (!storedLayerSettings?.basePath && !storedLayerSettings?.saveDirectory) {
-        syncAssetSavePathsFromKind();
+        void syncAssetSavePathsFromKind();
       }
       await loadCharacterAssets();
       return;
@@ -1715,7 +1743,7 @@ async function saveLayerConfig() {
   status.textContent = "캐릭터 레이어 설정을 저장하는 중이에요.";
 
   try {
-    const response = await fetch("/api/devtools/save-character-layer", {
+    const response = await fetch(createDevtoolsApiPath("/api/devtools/save-character-layer"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1766,7 +1794,7 @@ async function deleteLayerConfig() {
   status.textContent = "선택한 Layer 설정을 삭제하는 중이에요.";
 
   try {
-    const response = await fetch("/api/devtools/delete-character-layer", {
+    const response = await fetch(createDevtoolsApiPath("/api/devtools/delete-character-layer"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1848,7 +1876,7 @@ function init() {
   loadLayerSettings();
   regionOverlayVisibleInput.checked = loadRegionOverlayVisible();
   if (!storedLayerSettings) {
-    syncAssetSavePathsFromKind();
+    void syncAssetSavePathsFromKind();
   }
   renderRegionControls();
   renderOutputs();
@@ -1887,19 +1915,19 @@ function init() {
   });
   baseAssetSelect.addEventListener("change", applySavedBaseAsset);
   uploadPartAssetsButton.addEventListener("click", () => {
-    void uploadAssetImages("parts", partImages.filter(isUploadImage));
+    void uploadAssetImages(getAssetSaveKind(), partImages.filter(isUploadImage));
   });
   previewSizeInput.addEventListener("input", () => {
     setPreviewSize(getPreviewSize());
   });
   previewZoomOutButton.addEventListener("click", () => {
-    setPreviewSize(getPreviewSize() - 80);
+    setPreviewSize(getPreviewSize() - 120);
   });
   previewZoomInButton.addEventListener("click", () => {
-    setPreviewSize(getPreviewSize() + 80);
+    setPreviewSize(getPreviewSize() + 120);
   });
   assetSaveKindSelect.addEventListener("change", () => {
-    syncAssetSavePathsFromKind();
+    void syncAssetSavePathsFromKind();
     renderOutputs();
   });
   [
@@ -1917,7 +1945,7 @@ function init() {
     input.addEventListener("change", renderOutputs);
   });
   characterSelect.addEventListener("change", () => {
-    syncAssetSavePathsFromKind();
+    void syncAssetSavePathsFromKind();
     void loadCharacterAssets();
   });
   surfaceSelect.addEventListener("change", handleSurfaceSelectionChange);
@@ -1939,7 +1967,7 @@ function init() {
     void deleteLayerConfig();
   });
   copyLayerButton.addEventListener("click", () => {
-    void copyText(layerOutput.textContent ?? "", copyLayerButton, "Layer 복사");
+    void copyText(layerOutput.textContent ?? "", copyLayerButton, "Snippet 복사");
   });
   copyManifestButton.addEventListener("click", () => {
     void copyText(manifestOutput.textContent ?? "", copyManifestButton, "Manifest 복사");

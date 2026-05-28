@@ -1,4 +1,11 @@
-import type { RuntimeScene } from "../core/types.js";
+import type { CharacterExpressionAsset, RuntimeScene } from "../core/types.js";
+
+/**
+ * Builds a devtools API URL relative to the currently opened devtools page.
+ */
+export function createDevtoolsApiPath(path: string) {
+  return `./${path.replace(/^\//, "")}`;
+}
 
 export type DevApiResponse = {
   ok?: boolean;
@@ -26,6 +33,7 @@ export type CharacterWorkspace = {
   browserCommonPrefix: string;
   allowLocalhost?: boolean;
   allowedIps?: string[];
+  basePath?: string;
   resolved?: {
     sourceCharacters: string;
     buildCharacters: string;
@@ -34,6 +42,7 @@ export type CharacterWorkspace = {
   devServer?: {
     allowLocalhost: boolean;
     allowedIps: string[];
+    basePath?: string;
   };
 };
 
@@ -56,6 +65,13 @@ export type AssetFilesResponse = DevApiResponse & {
 
 export type CharacterSurfaceAsset = {
   id?: string;
+  visual?: {
+    type: "image";
+    src: string;
+  } | {
+    type: "scene";
+    sceneId: string;
+  };
   image?: string;
   expression?: string;
   alt?: string;
@@ -77,7 +93,7 @@ export type CharacterSurfaceAsset = {
 };
 
 export type CharacterAssetsPayload = {
-  expressions?: Record<string, string | string[]>;
+  expressions?: Record<string, CharacterExpressionAsset>;
   surfaces?: Record<string, CharacterSurfaceAsset>;
   defaultScene?: string;
   scenes?: Record<string, RuntimeScene>;
@@ -112,7 +128,7 @@ export async function readApiJson<T extends DevApiResponse>(response: Response):
  * Loads character ids exposed by the dev server.
  */
 export async function fetchCharacterList() {
-  const response = await fetch("/api/devtools/characters");
+  const response = await fetch(createDevtoolsApiPath("/api/devtools/characters"));
   const result = await readApiJson<CharacterListResponse>(response);
 
   if (!response.ok || !result.ok) {
@@ -126,7 +142,7 @@ export async function fetchCharacterList() {
  * Deletes one character directory from the dev workspace.
  */
 export async function deleteCharacter(characterId: string) {
-  const response = await fetch("/api/devtools/delete-character", {
+  const response = await fetch(createDevtoolsApiPath("/api/devtools/delete-character"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ characterId }),
@@ -144,7 +160,7 @@ export async function deleteCharacter(characterId: string) {
  * Loads the editable character workspace path settings.
  */
 export async function fetchCharacterWorkspace() {
-  const response = await fetch("/api/devtools/character-workspace");
+  const response = await fetch(createDevtoolsApiPath("/api/devtools/character-workspace"));
   const result = await readApiJson<CharacterWorkspaceResponse>(response);
 
   if (!response.ok || !result.ok || !result.workspace) {
@@ -158,7 +174,7 @@ export async function fetchCharacterWorkspace() {
  * Saves character workspace path settings.
  */
 export async function saveCharacterWorkspace(workspace: CharacterWorkspace) {
-  const response = await fetch("/api/devtools/character-workspace", {
+  const response = await fetch(createDevtoolsApiPath("/api/devtools/character-workspace"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(workspace),
@@ -176,7 +192,7 @@ export async function saveCharacterWorkspace(workspace: CharacterWorkspace) {
  * Loads editable character assets for one character id.
  */
 export async function fetchCharacterAssets(characterId: string) {
-  const response = await fetch(`/api/devtools/character-assets?characterId=${encodeURIComponent(characterId)}`);
+  const response = await fetch(createDevtoolsApiPath(`/api/devtools/character-assets?characterId=${encodeURIComponent(characterId)}`));
   const result = await readApiJson<CharacterAssetsResponse>(response);
 
   if (!response.ok || !result.ok) {
@@ -190,7 +206,7 @@ export async function fetchCharacterAssets(characterId: string) {
  * Loads character and common image assets available to devtools.
  */
 export async function fetchAssetFiles(characterId: string) {
-  const response = await fetch(`/api/devtools/asset-files?characterId=${encodeURIComponent(characterId)}`);
+  const response = await fetch(createDevtoolsApiPath(`/api/devtools/asset-files?characterId=${encodeURIComponent(characterId)}`));
   const result = await readApiJson<AssetFilesResponse>(response);
 
   if (!response.ok || !result.ok) {

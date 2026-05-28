@@ -11,6 +11,7 @@ import {
   saveStoredRegion,
   TargetRegion,
 } from "./assetShared.js";
+import { createDevtoolsApiPath } from "./assetApi.js";
 
 type GenerationResponse = {
   ok?: boolean;
@@ -125,7 +126,7 @@ async function generateWithComfy() {
   status.textContent = "ComfyUI bridge에 생성 요청을 보내는 중이에요.";
 
   try {
-    const response = await fetch("/api/devtools/generate-layer-part", {
+    const response = await fetch(createDevtoolsApiPath("/api/devtools/generate-layer-part"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

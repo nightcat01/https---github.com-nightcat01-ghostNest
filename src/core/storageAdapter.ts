@@ -1,5 +1,22 @@
 import type { StorageAdapter } from "./types.js";
 
+/**
+ * Creates an ephemeral storage adapter for runtimes that should not persist user settings.
+ */
+export function createMemoryStorageAdapter(): StorageAdapter {
+  const values = new Map<string, unknown>();
+
+  return {
+    get: (key: string) => values.get(key) ?? null,
+    set: (key: string, value: unknown) => {
+      values.set(key, value);
+    },
+    remove: (key: string) => {
+      values.delete(key);
+    },
+  };
+}
+
 export function createLocalStorageAdapter(namespace: string): StorageAdapter {
   const getStorageKey = (key: string) => `${namespace}:${key}`;
 

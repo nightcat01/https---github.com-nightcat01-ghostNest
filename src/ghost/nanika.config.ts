@@ -3,19 +3,22 @@ import type {
   GhostRuntimeOptions,
   ManagementMenuOptions,
   RuntimeDevtoolsOptions,
-  RuntimeFeatureOptions,
+  RuntimeControlOptions,
   RuntimeSceneOptions,
   RuntimePlugin,
   RuntimeSelectors,
+  SpeechBalloonSizeOptions,
   SpeechTypingOptions,
 } from "../core/types.js";
 import { createDemoPlugins } from "../demo/demoPlugins.js";
 import { characterSettingsExtensionConfig } from "../plugins/characterSettings/index.js";
 import { comfyAssetGeneratorExtensionConfig } from "../plugins/comfyAssetGenerator/index.js";
+import { nanikaMappingExtensionConfig } from "../plugins/nanikaMapping/index.js";
 
 export const enabledExtensions = {
   "character-settings": characterSettingsExtensionConfig,
   "comfy-asset-generator": comfyAssetGeneratorExtensionConfig,
+  "nanika-mapping": nanikaMappingExtensionConfig,
 } as const;
 
 /**
@@ -59,6 +62,8 @@ const devtoolOptions = {
       statusIdleCountdown: "#statusIdleCountdown",
       statusRandomPrompt: "#statusRandomPrompt",
       statusActionTimers: "#statusActionTimers",
+      statusRuntimeArea: "#statusRuntimeArea",
+      statusSpeechBox: "#statusSpeechBox",
     },
   },
   hitboxEditor: {
@@ -84,12 +89,20 @@ const managementMenuOptions = {
 } satisfies ManagementMenuOptions;
 
 /**
- * Toggles runtime behaviors that are useful to expose during integration.
+ * Controls which runtime capabilities are allowed in this Nanika preset.
  */
-const featureOptions = {
+const controlOptions = {
   commandHoverDescription: true,
+  areaHoverDescription: true,
+  idleReaction: true,
+  randomPrompt: true,
+  managementMenu: true,
+  plugins: true,
+  devtools: true,
+  diagnostics: true,
+  hitboxEditor: true,
   debugHitAreas: true,
-} satisfies Partial<RuntimeFeatureOptions>;
+} satisfies Partial<RuntimeControlOptions>;
 
 /**
  * Controls the dialogue typing effect shared by plain text and DialogueScript output.
@@ -98,6 +111,21 @@ const typingOptions = {
   enabled: true,
   interval: 26,
 } satisfies Partial<SpeechTypingOptions>;
+
+/**
+ * Limits the speech balloon area so long text or large layouts do not push the character scene around.
+ */
+const speechBalloonSizeOptions = {
+  stageWidth: "min(420px, calc(var(--runtime-area-width, 420px) - 48px))",
+  maxWidth: "100%",
+  dialogueWidth: "min(100%, calc(var(--runtime-area-width, 620px) - 48px))",
+  dialogueMaxWidth: "620px",
+  dialogueHeight: "min(30vh, 260px)",
+  dialogueMaxHeight: "min(32vh, calc(var(--runtime-area-height, 720px) - var(--character-sprite-height, 390px) - 72px))",
+  actionMenuMaxHeight: "156px",
+  mobileMaxHeight: "min(30vh, calc(var(--runtime-area-height, 640px) - var(--character-sprite-mobile-height, 255px) - 76px))",
+  mobileActionMenuMaxHeight: "136px",
+} satisfies Partial<SpeechBalloonSizeOptions>;
 
 /**
  * Keeps room/background/prop composition outside the character surface definition.
@@ -159,7 +187,8 @@ export const nanikaConfig = {
   devtools: devtoolOptions,
   managementMenu: managementMenuOptions,
   scene: sceneOptions,
-  features: featureOptions,
+  controls: controlOptions,
   typing: typingOptions,
+  speechBalloonSize: speechBalloonSizeOptions,
   spriteSize: spriteSizeOptions,
 } satisfies Omit<GhostRuntimeOptions, "character" | "rules">;

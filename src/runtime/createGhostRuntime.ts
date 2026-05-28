@@ -2,7 +2,7 @@ import { createDialogueEngine } from "../core/dialogueEngine.js";
 import { validateDialogueScript } from "../core/dialogueScriptValidator.js";
 import { createEventBus } from "../core/eventBus.js";
 import { createRuntimeState } from "../core/runtimeState.js";
-import { createLocalStorageAdapter } from "../core/storageAdapter.js";
+import { createLocalStorageAdapter, createMemoryStorageAdapter } from "../core/storageAdapter.js";
 import { createExternalEventBridge } from "../core/eventBridge.js";
 import { createRuntimeDiagnostics } from "../devtools/runtimeDiagnostics.js";
 import { createActionRunner } from "./actionRunner.js";
@@ -17,11 +17,14 @@ import { bindRuntimeDomEvents } from "./runtimeEventBindings.js";
 import { startRuntimeTimers } from "./runtimeTimers.js";
 import { bindRuntimeRuleEvents } from "./ruleRunner.js";
 import {
+  defaultControls,
   defaultFeatures,
   defaultMaxLogItems,
+  defaultSpeechBalloonSize,
   defaultSpriteSize,
   defaultTiming,
   defaultTyping,
+  defaultUserPreferences,
 } from "./runtimeDefaults.js";
 import type {
   CharacterExpression,
@@ -40,9 +43,15 @@ export function createGhostRuntime(options: GhostRuntimeOptions): GhostRuntime {
     ...defaultTiming,
     ...options.timing,
   };
-  const features = {
+  const controls = {
+    ...defaultControls,
     ...defaultFeatures,
     ...options.features,
+    ...options.controls,
+  };
+  const userPreferences = {
+    ...defaultUserPreferences,
+    ...options.userPreferences,
   };
   const spriteSize = {
     ...defaultSpriteSize,
@@ -52,19 +61,30 @@ export function createGhostRuntime(options: GhostRuntimeOptions): GhostRuntime {
     ...defaultTyping,
     ...options.typing,
   };
+  const speechLayout = {
+    mode: options.speechLayout?.mode ?? "floating",
+    placement: options.speechLayout?.placement ?? "below-character",
+  };
+  const speechBalloonSize = {
+    ...defaultSpeechBalloonSize,
+    ...options.speechBalloonSize,
+  };
   const maxLogItems = options.maxLogItems ?? defaultMaxLogItems;
   const elements = getRuntimeElements(options.selectors);
   const eventBus = createEventBus();
   const pluginRegistry = new Map(options.plugins?.map((plugin) => [plugin.id, plugin]) ?? []);
   const rules = [...createDefaultRules(timing), ...(options.rules ?? [])];
   
-  const storageAdapter = options.storageAdapter ?? createLocalStorageAdapter(`ghostNest:${options.character.profile.id}`);
+  const storageAdapter = controls.persistence
+    ? options.storageAdapter ?? createLocalStorageAdapter(`ghostNest:${options.character.profile.id}`)
+    : createMemoryStorageAdapter();
   const dialogue = options.dialogueEngine ?? createDialogueEngine({
     profile: options.character.profile,
     lines: options.character.lines,
   });
   
   const state = createRuntimeState();
+  state.expression = options.initialExpression ?? options.character.profile.defaultExpression ?? state.expression;
   const cleanupCallbacks: Array<() => void> = [];
   const actionTimers = new Map<string, number>();
   const ruleCooldowns = new Map<string, number>();
@@ -82,14 +102,23 @@ export function createGhostRuntime(options: GhostRuntimeOptions): GhostRuntime {
   });
   const characterRenderer = createCharacterRenderer({ elements, character: options.character });
   const diagnostics = createRuntimeDiagnostics({
-    selectors: options.devtools?.diagnostics?.selectors,
+    selectors: controls.devtools && controls.diagnostics ? options.devtools?.diagnostics?.selectors : undefined,
     state,
     timing,
     actionTimers,
     maxLogItems,
+    getLayoutMetrics() {
+      const areaRect = (elements.stage.offsetParent ?? document.documentElement).getBoundingClientRect();
+      const speechRect = elements.speechBalloon?.getBoundingClientRect();
+
+      return {
+        area: areaRect,
+        speech: speechRect ?? null,
+      };
+    },
   });
   const dialoguePlayer = createDialoguePlayer({
-    typingInterval: typing.enabled ? typing.interval : 0,
+    typingInterval: controls.typing && typing.enabled ? typing.interval : 0,
     onText(text) {
       elements.speechText.textContent += text;
     },
@@ -119,11 +148,41 @@ export function createGhostRuntime(options: GhostRuntimeOptions): GhostRuntime {
     },
   });
 
+  /**
+   * 말풍선과 대사창 크기 CSS 변수를 런타임 stage에 반영합니다.
+   */
+  function applySpeechBalloonSize(size?: Partial<typeof speechBalloonSize>) {
+    const resolvedSize = {
+      ...speechBalloonSize,
+      ...size,
+    };
+
+    elements.stage.style.setProperty("--speech-stage-width", resolvedSize.stageWidth);
+    elements.stage.style.setProperty("--speech-balloon-width", resolvedSize.width);
+    elements.stage.style.setProperty("--speech-balloon-max-width", resolvedSize.maxWidth);
+    elements.stage.style.setProperty("--speech-balloon-action-menu-max-height", resolvedSize.actionMenuMaxHeight);
+    elements.stage.style.setProperty("--speech-balloon-min-height", resolvedSize.minHeight);
+    elements.stage.style.setProperty("--speech-balloon-max-height", resolvedSize.maxHeight);
+    elements.stage.style.setProperty("--speech-dialogue-width", resolvedSize.dialogueWidth);
+    elements.stage.style.setProperty("--speech-dialogue-max-width", resolvedSize.dialogueMaxWidth);
+    elements.stage.style.setProperty("--speech-dialogue-height", resolvedSize.dialogueHeight);
+    elements.stage.style.setProperty("--speech-dialogue-min-height", resolvedSize.dialogueMinHeight);
+    elements.stage.style.setProperty("--speech-dialogue-max-height", resolvedSize.dialogueMaxHeight);
+    elements.stage.style.setProperty("--speech-balloon-mobile-width", resolvedSize.mobileWidth);
+    elements.stage.style.setProperty("--speech-balloon-mobile-max-height", resolvedSize.mobileMaxHeight);
+    elements.stage.style.setProperty("--speech-balloon-mobile-action-menu-max-height", resolvedSize.mobileActionMenuMaxHeight);
+  }
+
   elements.stage.style.setProperty("--character-sprite-width", spriteSize.desktopWidth);
   elements.stage.style.setProperty("--character-sprite-height", spriteSize.desktopHeight);
   elements.stage.style.setProperty("--character-sprite-mobile-width", spriteSize.mobileWidth);
   elements.stage.style.setProperty("--character-sprite-mobile-height", spriteSize.mobileHeight);
-  cleanupCallbacks.push(initFloatingLayout({ elements }));
+  applySpeechBalloonSize();
+  elements.stage.dataset.speechLayout = speechLayout.mode;
+  elements.stage.dataset.speechPlacement = speechLayout.placement;
+  if (controls.floatingLayout) {
+    cleanupCallbacks.push(initFloatingLayout({ elements }));
+  }
 
   /**
    * 현재 대화 메시지를 말풍선 DOM에 반영합니다.
@@ -233,12 +292,18 @@ export function createGhostRuntime(options: GhostRuntimeOptions): GhostRuntime {
     storageAdapter,
     actionTimers,
     managementMenu: options.managementMenu,
+    navigation: options.navigation,
+    speechLayout,
+    defaultSpeechBalloonSize: speechBalloonSize,
+    controls,
+    userPreferences,
     eventBus,
     renderSpeech,
     renderPreviewSpeech,
     renderCharacterState,
     applySurface: characterRenderer.applySurface,
     setLayerAnimationActive: characterRenderer.setLayerAnimationActive,
+    applySpeechBalloonSize,
     addLog: diagnostics.addLog,
     touchInteraction,
   });
@@ -246,7 +311,7 @@ export function createGhostRuntime(options: GhostRuntimeOptions): GhostRuntime {
   bindRuntimeRuleEvents({
     eventBus,
     rules,
-    features,
+    controls,
     state,
     ruleCooldowns,
     runActions,
@@ -276,6 +341,7 @@ export function createGhostRuntime(options: GhostRuntimeOptions): GhostRuntime {
     elements,
     eventBus,
     character: options.character,
+    controls,
     cleanupCallbacks,
     touchInteraction,
     runAction,
@@ -300,6 +366,7 @@ export function createGhostRuntime(options: GhostRuntimeOptions): GhostRuntime {
     eventBus,
     state,
     timing,
+    controls,
     renderStatusPanel: diagnostics.renderStatusPanel,
     touchInteraction,
   }));
@@ -313,7 +380,7 @@ export function createGhostRuntime(options: GhostRuntimeOptions): GhostRuntime {
     actionTimers.clear();
   });
 
-  if (options.devtools?.hitboxEditor) {
+  if (controls.devtools && controls.hitboxEditor && options.devtools?.hitboxEditor) {
     const hitboxEditor = initHitboxEditor({
       elements,
       character: options.character,
@@ -322,7 +389,18 @@ export function createGhostRuntime(options: GhostRuntimeOptions): GhostRuntime {
     });
     cleanupCallbacks.push(hitboxEditor.destroy);
   }
-  renderCharacterState();
+  if (options.initialSurface) {
+    const initialSurface = options.character.assets?.surfaces?.[options.initialSurface];
+
+    if (initialSurface?.expression) {
+      state.expression = initialSurface.expression;
+      elements.sprite.dataset.expression = initialSurface.expression;
+    }
+
+    characterRenderer.applySurface(options.initialSurface);
+  } else {
+    renderCharacterState();
+  }
   diagnostics.renderStatusPanel();
   eventBus.emit("runtime:ready");
 

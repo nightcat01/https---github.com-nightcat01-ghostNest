@@ -6,7 +6,7 @@ export {
 export { createDialogueEngine } from "./core/dialogueEngine.js";
 export { validateDialogueScript } from "./core/dialogueScriptValidator.js";
 export { parseSakuraScript } from "./core/sakuraScriptParser.js";
-export { createLocalStorageAdapter } from "./core/storageAdapter.js";
+export { createLocalStorageAdapter, createMemoryStorageAdapter } from "./core/storageAdapter.js";
 export type * from "./core/types.js";
 export type {
   GhostManifest,

@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GhostNest Nanika Mapping</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="asset-lab-shell">
+      <header class="asset-lab-header">
+        <div>
+          <p class="eyebrow">Nanika Mapping Plugin</p>
+          <h1>기능 연결 확인</h1>
+        </div>
+        <a class="asset-lab-back" href="./dev-assets.html">플러그인 목록</a>
+      </header>
+
+      <section class="asset-lab-panel">
+        <div class="asset-lab-section">
+          <h2>현재 프리셋</h2>
+          <p class="asset-lab-help">캐릭터, 기능, 이벤트, 액션이 어떤 실행 단위로 묶였는지 확인합니다. 아직은 저장 편집 전의 읽기 전용 확인 화면입니다.</p>
+          <div class="nanika-mapping-summary" id="mappingSummary"></div>
+        </div>
+      </section>
+
+      <section class="nanika-mapping-layout" aria-label="Nanika mapping catalogs">
+        <section class="asset-lab-panel">
+          <div class="asset-lab-section">
+            <h2>캐릭터</h2>
+            <p class="asset-lab-help">현재 preset에 연결된 캐릭터와 표시 리소스 요약입니다.</p>
+            <div class="nanika-mapping-list" id="characterList"></div>
+          </div>
+        </section>
+
+        <section class="asset-lab-panel">
+          <div class="asset-lab-section">
+            <h2>기능 / 플러그인</h2>
+            <p class="asset-lab-help">`call_plugin` 액션으로 연결 가능한 기능 목록입니다.</p>
+            <div class="nanika-mapping-list" id="capabilityList"></div>
+          </div>
+        </section>
+
+        <section class="asset-lab-panel">
+          <div class="asset-lab-section">
+            <h2>이벤트</h2>
+            <p class="asset-lab-help">rule의 시작점으로 사용할 수 있는 런타임 이벤트입니다.</p>
+            <div class="nanika-mapping-list" id="eventList"></div>
+          </div>
+        </section>
+
+        <section class="asset-lab-panel">
+          <div class="asset-lab-section">
+            <h2>액션</h2>
+            <p class="asset-lab-help">나니카가 실행할 수 있는 기본 행동 단위입니다.</p>
+            <div class="nanika-mapping-list" id="actionList"></div>
+          </div>
+        </section>
+      </section>
+
+      <section class="asset-lab-panel">
+        <div class="asset-lab-section">
+          <h2>현재 매핑</h2>
+          <p class="asset-lab-help">preset에 들어간 rule을 이벤트와 액션 배열 기준으로 보여줍니다.</p>
+          <div class="nanika-mapping-list nanika-mapping-rule-list" id="mappingList"></div>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="./dist/devtools/assetNanikaMapping.js"></script>
+  </body>
+</html>

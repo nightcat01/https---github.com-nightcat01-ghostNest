@@ -1,3 +1,5 @@
+import { createDevtoolsApiPath } from "./assetApi.js";
+
 type PartRecipeId = "eyeBlink" | "mouthShapes" | "expressionSet";
 type WorkflowMode = "serverFile" | "upload" | "url";
 type GenerationStrength = "ultraConservative" | "conservative" | "balanced" | "strong";
@@ -388,7 +390,7 @@ function renderCheckpointOptions(preferredCheckpoint = getPreferredCheckpointNam
  */
 async function loadComfyModels() {
   try {
-    const response = await fetch("/api/devtools/comfy-models");
+    const response = await fetch(createDevtoolsApiPath("/api/devtools/comfy-models"));
     const result = await response.json() as ComfyModelsResponse;
 
     if (!response.ok || !result.ok) {
@@ -1078,7 +1080,7 @@ async function saveGeneratedAssets() {
   elements.generationStatus.textContent = "생성 이미지를 프로젝트에 저장하는 중...";
 
   try {
-    const response = await fetch("/api/devtools/save-generated-assets", {
+    const response = await fetch(createDevtoolsApiPath("/api/devtools/save-generated-assets"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -1624,7 +1626,7 @@ async function generateLayerParts() {
   elements.generationStatus.textContent = "선택한 파츠 영역을 crop으로 만든 뒤 GhostNest bridge에 생성 요청을 보내는 중이에요.";
 
   try {
-    const response = await fetch("/api/devtools/generate-layer-part", {
+    const response = await fetch(createDevtoolsApiPath("/api/devtools/generate-layer-part"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

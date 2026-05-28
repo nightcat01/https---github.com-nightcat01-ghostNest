@@ -1,4 +1,31 @@
-import type { CharacterDefinition, CharacterLayerId, CharacterSurface, ManagementMenuItem } from "../../core/types.js";
+import type {
+  CharacterDefinition,
+  CharacterExpressionAsset,
+  CharacterLayerId,
+  CharacterSurface,
+  CharacterVisualSource,
+  ManagementMenuItem,
+} from "../../core/types.js";
+
+/**
+ * Creates a readable label for a visual source used in demo menus.
+ */
+function getVisualSourceLabel(source: string | CharacterVisualSource) {
+  return typeof source === "string"
+    ? source
+    : source.type === "image"
+      ? source.src
+      : `scene:${source.sceneId}`;
+}
+
+/**
+ * Summarizes expression visual candidates without assuming they are image paths.
+ */
+function getExpressionAssetDescription(asset: CharacterExpressionAsset) {
+  return Array.isArray(asset)
+    ? `${asset.length}개 visual 후보`
+    : getVisualSourceLabel(asset);
+}
 
 /**
  * Creates a compact label for one registered surface.
@@ -53,7 +80,7 @@ function createExpressionAssetItems(character: CharacterDefinition): ManagementM
     children: expressions.map(([expression, asset]) => ({
       id: `asset-test-expression-${expression}`,
       label: expression,
-      description: Array.isArray(asset) ? `${asset.length}개 이미지 후보` : asset,
+      description: getExpressionAssetDescription(asset),
       actions: [
         { type: "change_expression" as const, expression, clearTouchedPart: true },
         { type: "log", label: `management.asset_test.expression.${expression}` },

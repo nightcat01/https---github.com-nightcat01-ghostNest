@@ -1,4 +1,10 @@
-import type { RuntimeEventMap, RuntimeEventName, RuntimeState, RuntimeTimingOptions } from "../core/types.js";
+import type {
+  RuntimeControlOptions,
+  RuntimeEventMap,
+  RuntimeEventName,
+  RuntimeState,
+  RuntimeTimingOptions,
+} from "../core/types.js";
 
 type RuntimeEventEmitter = {
   emit: <TEventName extends RuntimeEventName>(
@@ -11,6 +17,7 @@ type StartRuntimeTimersOptions = {
   eventBus: RuntimeEventEmitter;
   state: RuntimeState;
   timing: RuntimeTimingOptions;
+  controls: RuntimeControlOptions;
   renderStatusPanel: () => void;
   touchInteraction: () => void;
 };
@@ -19,11 +26,12 @@ export function startRuntimeTimers({
   eventBus,
   state,
   timing,
+  controls,
   renderStatusPanel,
   touchInteraction,
 }: StartRuntimeTimersOptions) {
   const idleTimer = window.setInterval(() => {
-    if (state.isHidden) {
+    if (!controls.idleReaction || state.isHidden) {
       return;
     }
 
@@ -40,7 +48,7 @@ export function startRuntimeTimers({
   }, 1000);
 
   const randomPromptTimer = window.setInterval(() => {
-    if (state.isHidden) {
+    if (!controls.randomPrompt || state.isHidden) {
       return;
     }
 

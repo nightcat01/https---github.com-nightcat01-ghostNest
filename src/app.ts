@@ -1,8 +1,6 @@
 import type { GhostRuntime } from "./core/types.js";
-import { nanikaRules } from "./ghost/actions.js";
-import { character } from "./ghost/character.js";
-import { nanikaConfig } from "./ghost/nanika.config.js";
-import { createGhostRuntime } from "./runtime/createGhostRuntime.js";
+import { nanikaPreset } from "./ghost/preset.js";
+import { createGhostRuntimeFromPreset } from "./plugins/nanikaMapping/index.js";
 
 type GhostNestWindow = Window & {
   __ghostNestRuntime__?: GhostRuntime;
@@ -13,11 +11,6 @@ const ghostNestWindow = window as GhostNestWindow;
 ghostNestWindow.__ghostNestRuntime__?.destroy();
 
 /**
- * Boots the runtime from the three developer-facing surfaces:
- * character selection, Nanika configuration, and action rules.
+ * Boots the runtime from the current Nanika preset.
  */
-ghostNestWindow.__ghostNestRuntime__ = createGhostRuntime({
-  ...nanikaConfig,
-  character,
-  rules: nanikaRules,
-});
+ghostNestWindow.__ghostNestRuntime__ = createGhostRuntimeFromPreset(nanikaPreset);

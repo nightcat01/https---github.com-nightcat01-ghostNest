@@ -18,7 +18,7 @@
 
       <nav class="asset-tool-nav" aria-label="Character setting pages" data-character-nav data-current-page="expression"></nav>
 
-      <section class="asset-lab-grid" aria-label="Expression settings">
+      <section class="asset-lab-grid asset-character-editor-grid" aria-label="Expression settings">
         <section class="asset-lab-panel">
           <div class="asset-lab-section asset-step-intro">
             <h2>이 단계에서 하는 일</h2>
@@ -66,12 +66,18 @@
                   <option value="">저장된 base 이미지를 불러오는 중이에요.</option>
                 </select>
               </label>
+              <label>
+                연결할 Scene 조합
+                <select id="expressionSceneSelect" multiple size="5">
+                  <option value="">저장된 Scene 조합을 불러오는 중이에요.</option>
+                </select>
+              </label>
             </div>
           </div>
 
           <div class="asset-lab-section">
             <h2>이미지 등록</h2>
-            <p class="asset-lab-help">새 이미지를 바로 캐릭터 에셋 폴더에 저장합니다. 표정 후보로 쓸 이미지는 base에 저장하세요.</p>
+            <p class="asset-lab-help">새 이미지를 바로 캐릭터 에셋 폴더에 저장합니다. 한 장짜리 완성 이미지처럼 쓸 scene도 표정 후보로 연결할 수 있습니다.</p>
             <div class="asset-lab-field-grid">
               <label>
                 저장 위치

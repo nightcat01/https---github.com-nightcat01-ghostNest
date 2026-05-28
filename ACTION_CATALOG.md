@@ -6,14 +6,16 @@
 
 액션의 시작과 종료 기준은 [ACTION_LIFECYCLE.md](./ACTION_LIFECYCLE.md)를 함께 본다.
 
+화면에서 액션 목록을 선택하거나 매핑 편집기를 만들 때는 개발자용 조립 플러그인의 코드 카탈로그인 `src/plugins/nanikaMapping/actionCatalog.ts`를 기준으로 삼는다.
+
 ## 한눈에 보기
 
 | 분류 | 액션 |
 | --- | --- |
 | 대사 | `speak`, `speak_text`, `speak_script` |
-| 캐릭터 표현 | `change_expression`, `set_touched_part`, `play_animation`, `play_layer_animation`, `toggle_hidden`, `move_character` |
+| 캐릭터 표현 | `change_expression`, `surface`, `set_touched_part`, `play_animation`, `play_layer_animation`, `toggle_hidden`, `move_character` |
 | 외부 기능 | `call_plugin` |
-| UI | `open_ui`, `close_ui`, `open_management_menu`, `close_management_menu`, `set_management_menu_display`, `change_balloon`, `change_balloon_font_size`, `reset_runtime_ui` |
+| UI | `open_ui`, `close_ui`, `open_management_menu`, `close_management_menu`, `set_management_menu_display`, `change_balloon`, `change_balloon_font_size`, `change_speech_layout`, `reset_runtime_ui` |
 | 상태/흐름 | `set_state`, `emit_event`, `touch_interaction`, `mark_prompted`, `start_timer`, `stop_timer` |
 | 입출력 | `log`, `play_sound`, `show_notification`, `save_data`, `load_data`, `navigate` |
 
@@ -76,6 +78,16 @@ JSON `DialogueScript`를 실행한다.
 ```
 
 등록된 이미지 후보가 여러 개라면 해당 표정 안에서 후보를 선택할 수 있다.
+
+### surface
+
+캐릭터 surface를 변경한다.
+
+```ts
+{ type: "surface", id: "idle", startIdleLayers: true }
+```
+
+surface는 expression보다 실제 렌더링에 가까운 표시 단위이며, scene visual이나 layer 조합을 포함할 수 있다.
 
 ### set_touched_part
 
@@ -230,6 +242,16 @@ JSON `DialogueScript`를 실행한다.
 ```
 
 현재 CSS에는 `small`, `large` 예시가 있고, `default`를 주면 기본 크기로 되돌린다.
+
+### change_speech_layout
+
+대사 UI 배치를 변경한다.
+
+```ts
+{ type: "change_speech_layout", mode: "dialogue-box", placement: "overlay-bottom" }
+```
+
+현재 지원하는 mode는 `floating`, `dialogue-box`이고 placement는 `below-character`, `overlay-bottom`이다.
 
 ### reset_runtime_ui
 

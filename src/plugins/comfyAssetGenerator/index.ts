@@ -22,7 +22,7 @@ export const comfyAssetGeneratorExtension = {
 } as const;
 
 export const comfyAssetGeneratorExtensionConfig = {
-  enabled: true,
+  enabled: false,
   devServer: {
     bridge: true,
     comfyUiUrl: "http://127.0.0.1:8188",

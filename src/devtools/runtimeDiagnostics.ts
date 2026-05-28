@@ -11,6 +11,10 @@ type RuntimeDiagnosticsOptions = {
   timing: RuntimeTimingOptions;
   actionTimers: Map<string, number>;
   maxLogItems: number;
+  getLayoutMetrics?: () => {
+    area: DOMRect;
+    speech: DOMRect | null;
+  };
 };
 
 function optionalElement<TElement extends Element>(selector: string | undefined): TElement | null {
@@ -27,6 +31,7 @@ export function createRuntimeDiagnostics({
   timing,
   actionTimers,
   maxLogItems,
+  getLayoutMetrics,
 }: RuntimeDiagnosticsOptions) {
   const elements = {
     eventLog: optionalElement<HTMLOListElement>(selectors.eventLog),
@@ -37,6 +42,8 @@ export function createRuntimeDiagnostics({
     statusIdleCountdown: optionalElement<HTMLElement>(selectors.statusIdleCountdown),
     statusRandomPrompt: optionalElement<HTMLElement>(selectors.statusRandomPrompt),
     statusActionTimers: optionalElement<HTMLElement>(selectors.statusActionTimers),
+    statusRuntimeArea: optionalElement<HTMLElement>(selectors.statusRuntimeArea),
+    statusSpeechBox: optionalElement<HTMLElement>(selectors.statusSpeechBox),
   };
   let lastEventLabel = "runtime:boot";
 
@@ -95,6 +102,20 @@ export function createRuntimeDiagnostics({
 
     if (elements.statusActionTimers) {
       elements.statusActionTimers.textContent = `${actionTimers.size}개`;
+    }
+
+    if (getLayoutMetrics) {
+      const metrics = getLayoutMetrics();
+
+      if (elements.statusRuntimeArea) {
+        elements.statusRuntimeArea.textContent = `${Math.round(metrics.area.width)} x ${Math.round(metrics.area.height)}`;
+      }
+
+      if (elements.statusSpeechBox) {
+        elements.statusSpeechBox.textContent = metrics.speech
+          ? `${Math.round(metrics.speech.width)} x ${Math.round(metrics.speech.height)}`
+          : "-";
+      }
     }
   }
 

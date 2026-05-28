@@ -1,4 +1,5 @@
 import { requireElement } from "./assetShared.js";
+import { createDevtoolsApiPath } from "./assetApi.js";
 
 type CharacterListResponse = {
   ok?: boolean;
@@ -231,7 +232,7 @@ async function loadSavedAssetFiles() {
   baseAssetSelect.replaceChildren(new Option("저장된 에셋을 불러오는 중이에요.", ""));
 
   try {
-    const response = await fetch(`/api/devtools/asset-files?characterId=${encodeURIComponent(characterId)}`);
+    const response = await fetch(createDevtoolsApiPath(`/api/devtools/asset-files?characterId=${encodeURIComponent(characterId)}`));
     const result = await readApiJson<AssetFilesResponse>(response);
 
     if (!response.ok || !result.ok) {
@@ -273,7 +274,7 @@ async function loadCharacterAssets() {
   surfaceSelect.replaceChildren(new Option("Surface를 불러오는 중이에요.", ""));
 
   try {
-    const response = await fetch(`/api/devtools/character-assets?characterId=${encodeURIComponent(characterId)}`);
+    const response = await fetch(createDevtoolsApiPath(`/api/devtools/character-assets?characterId=${encodeURIComponent(characterId)}`));
     const result = await readApiJson<CharacterAssetsResponse>(response);
 
     if (!response.ok || !result.ok) {
@@ -338,7 +339,7 @@ async function loadCharacters() {
   characterSelect.replaceChildren(new Option("캐릭터를 불러오는 중이에요.", ""));
 
   try {
-    const response = await fetch("/api/devtools/characters");
+    const response = await fetch(createDevtoolsApiPath("/api/devtools/characters"));
     const result = await readApiJson<CharacterListResponse>(response);
 
     if (!response.ok || !result.ok) {
@@ -419,7 +420,7 @@ async function saveSurfaceConfig() {
   status.textContent = "Set을 저장하는 중이에요.";
 
   try {
-    const response = await fetch("/api/devtools/save-character-surface", {
+    const response = await fetch(createDevtoolsApiPath("/api/devtools/save-character-surface"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -460,7 +461,7 @@ async function saveExpressionConfig() {
   status.textContent = "Expression을 저장하는 중이에요.";
 
   try {
-    const response = await fetch("/api/devtools/save-character-expression", {
+    const response = await fetch(createDevtoolsApiPath("/api/devtools/save-character-expression"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

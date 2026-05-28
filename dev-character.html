@@ -38,8 +38,8 @@
             <p class="asset-lab-status" id="characterHomeStatus" role="status">캐릭터 제작 상태를 확인하는 중이에요.</p>
           </div>
 
-          <div class="asset-lab-section">
-            <h2>작업 경로</h2>
+          <details class="asset-lab-section asset-lab-advanced">
+            <summary>작업 경로 / 접근 설정</summary>
             <p class="asset-lab-help">npm으로 설치한 경우에도 실제 프로젝트의 캐릭터와 공통 에셋 폴더를 지정해서 사용합니다.</p>
             <div class="asset-workspace-form">
               <label>
@@ -67,6 +67,10 @@
                 <input id="allowLocalhostInput" type="checkbox" checked />
               </label>
               <label>
+                DevTools URL prefix
+                <input id="devtoolsBasePathInput" type="text" placeholder="/ghost-nest" />
+              </label>
+              <label>
                 추가 허용 IP
                 <textarea id="allowedIpsInput" rows="3" placeholder="192.168.0.12&#10;10.0.0.23"></textarea>
               </label>
@@ -75,7 +79,7 @@
               <button type="button" id="saveWorkspaceButton">작업 경로 저장</button>
             </div>
             <p class="asset-lab-note" id="workspaceResolvedText">작업 경로를 불러오는 중이에요.</p>
-          </div>
+          </details>
 
           <div class="asset-lab-section">
             <h2>현재 상태</h2>

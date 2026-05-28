@@ -1,4 +1,5 @@
 import { LabImage, readImageFile } from "./assetShared.js";
+import { createDevtoolsApiPath, fetchCharacterWorkspace } from "./assetApi.js";
 
 export type CharacterAssetSaveKind = "base" | "parts" | "scenes";
 
@@ -14,11 +15,32 @@ type SaveAssetFilesResponse = {
   saved?: SavedAssetFile[];
 };
 
+let workspacePromise: ReturnType<typeof fetchCharacterWorkspace> | null = null;
+
 /**
- * Builds the project-relative save directory for one character asset bucket.
+ * Reuses the character workspace config while a devtools page is open.
+ */
+async function getCachedCharacterWorkspace() {
+  workspacePromise ??= fetchCharacterWorkspace();
+
+  return workspacePromise;
+}
+
+/**
+ * Builds the virtual save directory mapped by the dev server to the configured character workspace.
  */
 export function createCharacterAssetSaveDirectory(characterId: string, assetKind: CharacterAssetSaveKind) {
   return `src/characters/${characterId || "rine"}/assets/${assetKind}`;
+}
+
+/**
+ * Builds a browser-facing asset path prefix for one character asset bucket.
+ */
+export async function createCharacterAssetBrowserBasePath(characterId: string, assetKind: CharacterAssetSaveKind) {
+  const workspace = await getCachedCharacterWorkspace();
+  const sourcePrefix = workspace.browserSourcePrefix.replaceAll("\\", "/").replace(/\/$/, "");
+
+  return `${sourcePrefix}/${characterId || "rine"}/assets/${assetKind}/`;
 }
 
 /**
@@ -39,14 +61,20 @@ export function readImageFiles(files: File[]) {
  * Converts server project paths into browser-facing asset paths used by character configs.
  */
 export function createSavedAssetPaths(savedFiles: SavedAssetFile[]) {
-  return savedFiles.map((savedFile) => `./${savedFile.path}`);
+  return savedFiles.map((savedFile) => {
+    const path = savedFile.path.replaceAll("\\", "/");
+
+    return path.startsWith(".") || path.startsWith("/") || /^https?:\/\//.test(path)
+      ? path
+      : `./${path}`;
+  });
 }
 
 /**
  * Saves uploaded browser images into one character asset folder.
  */
 export async function saveUploadedAssetFiles(directory: string, images: LabImage[]) {
-  const response = await fetch("/api/devtools/save-asset-files", {
+  const response = await fetch(createDevtoolsApiPath("/api/devtools/save-asset-files"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

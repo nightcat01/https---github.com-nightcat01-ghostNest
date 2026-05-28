@@ -1,12 +1,20 @@
 import { requireElement } from "./assetShared.js";
 import {
   AssetFile,
+  createDevtoolsApiPath,
   fetchAssetFiles,
   fetchCharacterAssets,
   readApiJson,
 } from "./assetApi.js";
 import { populateCharacterSelect } from "./assetCharacterSelect.js";
 import { appendAssetOptionGroups, filterAssetFiles } from "./assetSelect.js";
+import {
+  CharacterAssetSaveKind,
+  createCharacterAssetSaveDirectory,
+  createSavedAssetPaths,
+  readImageFiles,
+  saveUploadedAssetFiles,
+} from "./assetUpload.js";
 import type { RuntimeScene, RuntimeSceneLayer } from "../core/types.js";
 
 type SceneSaveResponse = {
@@ -53,6 +61,9 @@ const characterSelect = requireElement(document.querySelector<HTMLSelectElement>
 const sceneSelect = requireElement(document.querySelector<HTMLSelectElement>("#sceneSelect"), "#sceneSelect");
 const sceneIdInput = requireElement(document.querySelector<HTMLInputElement>("#sceneIdInput"), "#sceneIdInput");
 const defaultSceneInput = requireElement(document.querySelector<HTMLInputElement>("#defaultSceneInput"), "#defaultSceneInput");
+const sceneUploadAssetKindSelect = requireElement(document.querySelector<HTMLSelectElement>("#sceneUploadAssetKindSelect"), "#sceneUploadAssetKindSelect");
+const sceneImageInput = requireElement(document.querySelector<HTMLInputElement>("#sceneImageInput"), "#sceneImageInput");
+const uploadSceneImagesButton = requireElement(document.querySelector<HTMLButtonElement>("#uploadSceneImagesButton"), "#uploadSceneImagesButton");
 const backgroundAssetSelect = requireElement(document.querySelector<HTMLSelectElement>("#backgroundAssetSelect"), "#backgroundAssetSelect");
 const backgroundColorInput = requireElement(document.querySelector<HTMLInputElement>("#backgroundColorInput"), "#backgroundColorInput");
 const backgroundDepthInput = requireElement(document.querySelector<HTMLInputElement>("#backgroundDepthInput"), "#backgroundDepthInput");
@@ -91,6 +102,13 @@ let existingDefaultScene = "";
 let propLayers: EditableSceneLayer[] = [];
 let effectLayers: EditableSceneLayer[] = [];
 let sceneDragState: SceneDragState | null = null;
+
+/**
+ * Reads the selected folder for Scene page uploads.
+ */
+function getSceneUploadAssetKind(): CharacterAssetSaveKind {
+  return sceneUploadAssetKindSelect.value === "parts" ? "parts" : "scenes";
+}
 
 /**
  * Renders reusable scene asset choices for background, prop, and effect slots.
@@ -627,6 +645,48 @@ async function loadSavedAssetFiles() {
 }
 
 /**
+ * Saves browser-selected images for scene backgrounds, props, or effects.
+ */
+async function uploadSceneImages() {
+  const files = Array.from(sceneImageInput.files ?? []);
+  const assetKind = getSceneUploadAssetKind();
+  const characterId = characterSelect.value || "rine";
+
+  if (files.length === 0) {
+    status.textContent = "저장할 Scene 이미지를 먼저 선택하세요.";
+    return;
+  }
+
+  uploadSceneImagesButton.disabled = true;
+  status.textContent = `${assetKind} 폴더에 이미지 ${files.length}개를 저장하는 중이에요.`;
+
+  try {
+    const savedFiles = await saveUploadedAssetFiles(
+      createCharacterAssetSaveDirectory(characterId, assetKind),
+      await readImageFiles(files),
+    );
+    const savedPaths = createSavedAssetPaths(savedFiles);
+
+    await loadSavedAssetFiles();
+
+    if (assetKind === "scenes") {
+      backgroundAssetSelect.value = savedPaths[0] ?? backgroundAssetSelect.value;
+    } else {
+      propAssetSelect.value = savedPaths[0] ?? propAssetSelect.value;
+      effectAssetSelect.value = savedPaths[0] ?? effectAssetSelect.value;
+    }
+
+    sceneImageInput.value = "";
+    renderOutputs();
+    status.textContent = `${assetKind} 폴더에 이미지 ${savedFiles.length}개를 저장했어요.`;
+  } catch (error) {
+    status.textContent = error instanceof Error ? error.message : "Scene 이미지 저장 요청에 실패했어요.";
+  } finally {
+    uploadSceneImagesButton.disabled = false;
+  }
+}
+
+/**
  * Loads scene settings from the selected character.
  */
 async function loadCharacterAssets() {
@@ -694,7 +754,7 @@ async function saveSceneConfig() {
   status.textContent = "Scene을 저장하는 중이에요.";
 
   try {
-    const response = await fetch("/api/devtools/save-character-scene", {
+    const response = await fetch(createDevtoolsApiPath("/api/devtools/save-character-scene"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -741,7 +801,7 @@ async function deleteSceneConfig() {
   status.textContent = "Scene을 삭제하는 중이에요.";
 
   try {
-    const response = await fetch("/api/devtools/delete-character-scene", {
+    const response = await fetch(createDevtoolsApiPath("/api/devtools/delete-character-scene"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -841,6 +901,9 @@ function init() {
   });
   deleteButton.addEventListener("click", () => {
     void deleteSceneConfig();
+  });
+  uploadSceneImagesButton.addEventListener("click", () => {
+    void uploadSceneImages();
   });
   window.addEventListener("pointermove", handleSceneLayerDrag);
   window.addEventListener("pointerup", stopSceneLayerDrag);

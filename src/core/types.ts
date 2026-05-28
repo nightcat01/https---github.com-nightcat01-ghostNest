@@ -63,7 +63,17 @@ export type CharacterAssets = {
   hitAreas?: Partial<Record<CharacterTouchPart, CharacterTouchArea>>;
 };
 
-export type CharacterExpressionAsset = string | string[];
+export type CharacterVisualSource =
+  | {
+      type: "image";
+      src: string;
+    }
+  | {
+      type: "scene";
+      sceneId: string;
+    };
+
+export type CharacterExpressionAsset = string | string[] | CharacterVisualSource | CharacterVisualSource[];
 
 export type CharacterLayerId = "base" | "eyes" | "mouth" | "ears" | "accessory" | (string & {});
 
@@ -85,6 +95,7 @@ export type CharacterLayer = {
 
 export type CharacterSurface = {
   id: string;
+  visual?: CharacterVisualSource;
   image?: string;
   expression?: CharacterExpression;
   alt?: string;
@@ -315,6 +326,16 @@ export type BuiltinRuntimeAction =
       size: string;
     }
   | {
+      type: "change_speech_layout";
+      mode?: SpeechLayoutOptions["mode"];
+      placement?: SpeechLayoutOptions["placement"];
+    }
+  | {
+      type: "set_speech_balloon_size";
+      size?: Partial<SpeechBalloonSizeOptions>;
+      reset?: boolean;
+    }
+  | {
       type: "open_management_menu";
       menuId?: string;
       title?: string;
@@ -359,6 +380,11 @@ export type ManagementMenuOptions = {
   displays?: Record<string, ManagementMenuDisplay>;
 };
 
+export type RuntimeNavigationOptions = {
+  basePath?: string;
+  navigate?: (route: string) => void | Promise<void>;
+};
+
 export type RuntimeRule = {
   id: string;
   event: RuntimeEventName;
@@ -376,7 +402,7 @@ export type RuntimeRuleWhen = Partial<{
 export type RuntimeCondition =
   | {
       type: "feature_enabled";
-      feature: keyof RuntimeFeatureOptions;
+      feature: keyof RuntimeControlOptions;
     }
   | {
       type: "not_hidden";
@@ -448,6 +474,8 @@ export type RuntimeDiagnosticsDevtoolSelectors = {
   statusIdleCountdown?: string;
   statusRandomPrompt?: string;
   statusActionTimers?: string;
+  statusRuntimeArea?: string;
+  statusSpeechBox?: string;
 };
 
 export type RuntimeDevtoolsOptions = {
@@ -474,14 +502,65 @@ export type RuntimeTimingOptions = {
   areaHoverCooldown: number;
 };
 
-export type RuntimeFeatureOptions = {
+export type RuntimeControlOptions = {
+  speech: boolean;
+  typing: boolean;
+  characterClick: boolean;
+  characterTouch: boolean;
+  characterRightClick: boolean;
+  commandButtons: boolean;
   commandHoverDescription: boolean;
-  debugHitAreas?: boolean;
+  areaHoverDescription: boolean;
+  idleReaction: boolean;
+  randomPrompt: boolean;
+  managementMenu: boolean;
+  plugins: boolean;
+  persistence: boolean;
+  floatingLayout: boolean;
+  devtools: boolean;
+  diagnostics: boolean;
+  hitboxEditor: boolean;
+  debugHitAreas: boolean;
+};
+
+export type RuntimeFeatureOptions = Pick<
+  RuntimeControlOptions,
+  "commandHoverDescription" | "debugHitAreas"
+>;
+
+export type RuntimeUserPreferenceOptions = {
+  speechTheme: boolean;
+  speechLayout: boolean;
+  speechFontSize: boolean;
+  speechSize: boolean;
+  characterPosition: boolean;
 };
 
 export type SpeechTypingOptions = {
   enabled: boolean;
   interval: number;
+};
+
+export type SpeechLayoutOptions = {
+  mode?: "floating" | "dialogue-box";
+  placement?: "below-character" | "overlay-bottom";
+};
+
+export type SpeechBalloonSizeOptions = {
+  stageWidth: string;
+  width: string;
+  maxWidth: string;
+  actionMenuMaxHeight: string;
+  minHeight: string;
+  maxHeight: string;
+  dialogueWidth: string;
+  dialogueMaxWidth: string;
+  dialogueHeight: string;
+  dialogueMinHeight: string;
+  dialogueMaxHeight: string;
+  mobileWidth: string;
+  mobileMaxHeight: string;
+  mobileActionMenuMaxHeight: string;
 };
 
 export type StorageAdapter = {
@@ -499,12 +578,20 @@ export type GhostRuntimeOptions = {
   character: CharacterDefinition;
   plugins?: RuntimePlugin[];
   selectors: RuntimeSelectors;
+  initialExpression?: CharacterExpression;
+  initialSurface?: string;
   scene?: RuntimeSceneOptions;
   devtools?: RuntimeDevtoolsOptions;
   managementMenu?: ManagementMenuOptions;
+  navigation?: RuntimeNavigationOptions;
   timing?: Partial<RuntimeTimingOptions>;
+  controls?: Partial<RuntimeControlOptions>;
+  userPreferences?: Partial<RuntimeUserPreferenceOptions>;
+  /** @deprecated Use controls instead. */
   features?: Partial<RuntimeFeatureOptions>;
   typing?: Partial<SpeechTypingOptions>;
+  speechLayout?: SpeechLayoutOptions;
+  speechBalloonSize?: Partial<SpeechBalloonSizeOptions>;
   spriteSize?: Partial<CharacterSpriteSizeOptions>;
   rules?: RuntimeRule[];
   maxLogItems?: number;

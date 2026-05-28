@@ -15,12 +15,15 @@
       }
     },
     "comfy-asset-generator": {
-      "enabled": true,
+      "enabled": false,
       "devServer": {
         "bridge": false,
         "comfyUiUrl": "http://127.0.0.1:8188",
         "workflowPath": "src/devtools/layer-part-workflow.api.json"
       }
+    },
+    "nanika-mapping": {
+      "enabled": true
     }
   }
 }

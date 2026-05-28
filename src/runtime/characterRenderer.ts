@@ -5,6 +5,8 @@ import type {
   CharacterLayerId,
   CharacterRuntimeMode,
   CharacterSurface,
+  CharacterVisualSource,
+  RuntimeSceneLayer,
   RuntimeState,
 } from "../core/types.js";
 import type { RuntimeElements } from "./domElements.js";
@@ -14,23 +16,46 @@ type CharacterRendererOptions = {
   character: CharacterDefinition;
 };
 
-function pickExpressionAsset(asset: string | string[] | undefined, currentAsset: string | null) {
+function normalizeVisualSource(source: string | CharacterVisualSource | null | undefined): CharacterVisualSource | null {
+  if (!source) {
+    return null;
+  }
+
+  return typeof source === "string" ? { type: "image", src: source } : source;
+}
+
+function getVisualSourceKey(source: CharacterVisualSource | null) {
+  if (!source) {
+    return "";
+  }
+
+  return source.type === "image" ? `image:${source.src}` : `scene:${source.sceneId}`;
+}
+
+function pickExpressionAsset(
+  asset: string | string[] | CharacterVisualSource | CharacterVisualSource[] | undefined,
+  currentAsset: CharacterVisualSource | null,
+) {
   if (!asset) {
     return null;
   }
 
-  if (typeof asset === "string") {
-    return asset;
+  if (!Array.isArray(asset)) {
+    return normalizeVisualSource(asset);
   }
 
   if (asset.length === 0) {
     return null;
   }
 
-  const candidates = asset.length > 1 ? asset.filter((candidate) => candidate !== currentAsset) : asset;
+  const currentKey = getVisualSourceKey(currentAsset);
+  const visualAssets = asset.map(normalizeVisualSource).filter((source): source is CharacterVisualSource => Boolean(source));
+  const candidates = visualAssets.length > 1
+    ? visualAssets.filter((candidate) => getVisualSourceKey(candidate) !== currentKey)
+    : visualAssets;
   const index = Math.floor(Math.random() * candidates.length);
 
-  return candidates[index] ?? asset[0] ?? null;
+  return candidates[index] ?? visualAssets[0] ?? null;
 }
 
 function setupSpriteLayerElements(sprite: HTMLButtonElement, baseImage: HTMLImageElement) {
@@ -45,6 +70,10 @@ function setupSpriteLayerElements(sprite: HTMLButtonElement, baseImage: HTMLImag
 
 function getSurfaceBaseImage(surface: CharacterSurface) {
   return surface.layers?.base?.image ?? surface.image ?? null;
+}
+
+function getSurfaceVisualSource(surface: CharacterSurface) {
+  return surface.visual ?? normalizeVisualSource(getSurfaceBaseImage(surface));
 }
 
 function getSurfaceLayer(surface: CharacterSurface | null, layerId: CharacterLayerId): CharacterLayer | null {
@@ -121,16 +150,59 @@ function applyLayerPlacement(layerElement: HTMLImageElement, layer: CharacterLay
   layerElement.style.zIndex = String(layer.depth ?? 10);
 }
 
+function applySceneLayerPlacement(element: HTMLElement, layer: RuntimeSceneLayer) {
+  const placement = layer.placement;
+
+  if (!placement) {
+    element.dataset.placement = "full";
+    return;
+  }
+
+  element.dataset.placement = placement.unit ?? "percent";
+  element.style.left = `${placement.x}%`;
+  element.style.top = `${placement.y}%`;
+  element.style.width = `${placement.width}%`;
+  element.style.height = `${placement.height}%`;
+}
+
+/**
+ * Resolves once the browser has loaded and decoded an image source.
+ */
+function preloadImage(src: string) {
+  return new Promise<void>((resolve) => {
+    const image = new Image();
+
+    image.onload = () => {
+      if (typeof image.decode === "function") {
+        image.decode().then(resolve).catch(resolve);
+        return;
+      }
+
+      resolve();
+    };
+    image.onerror = () => resolve();
+    image.src = src;
+  });
+}
+
 /**
  * Creates the DOM renderer for character expressions, surfaces, and layer animations.
  * This module owns visual state only; actions and rules decide when the state changes.
  */
 export function createCharacterRenderer({ elements, character }: CharacterRendererOptions) {
   const spriteLayers = setupSpriteLayerElements(elements.sprite, elements.spriteImage);
+  const sceneVisualRoot = document.createElement("div");
   const activeLayerAnimations = new Map<CharacterLayerId, number>();
   const activeLayerIds = new Set<CharacterLayerId>();
   const idleLayerAnimations = new Map<CharacterLayerId, number>();
   let currentSurface: CharacterSurface | null = null;
+  let currentVisualSource: CharacterVisualSource | null = null;
+  let surfaceApplyToken = 0;
+
+  sceneVisualRoot.className = "character-sprite-scene";
+  sceneVisualRoot.hidden = true;
+  sceneVisualRoot.setAttribute("aria-hidden", "true");
+  elements.sprite.insertBefore(sceneVisualRoot, elements.spriteImage);
 
   function getLayerElement(layerId: CharacterLayerId) {
     const existingLayerElement = spriteLayers.get(layerId);
@@ -152,15 +224,17 @@ export function createCharacterRenderer({ elements, character }: CharacterRender
     return layerImage;
   }
 
-  function findSurfaceForExpression(expression: CharacterExpression, baseImage: string | null) {
+  function findSurfaceForExpression(expression: CharacterExpression, visualSource: CharacterVisualSource | null) {
     const surfaces = character.assets?.surfaces;
 
     if (!surfaces) {
       return null;
     }
 
+    const visualSourceKey = getVisualSourceKey(visualSource);
+
     return Object.values(surfaces).find((surface) =>
-      surface.expression === expression && (!baseImage || getSurfaceBaseImage(surface) === baseImage),
+      surface.expression === expression && (!visualSourceKey || getVisualSourceKey(getSurfaceVisualSource(surface)) === visualSourceKey),
     ) ?? null;
   }
 
@@ -176,7 +250,7 @@ export function createCharacterRenderer({ elements, character }: CharacterRender
     });
   }
 
-  function preloadSurfaceImages(surface: CharacterSurface) {
+  function getSurfaceImageSources(surface: CharacterSurface) {
     const layerImages = Object.values(surface.layers ?? {}).flatMap((layer) => {
       if (!layer) {
         return [];
@@ -192,10 +266,85 @@ export function createCharacterRenderer({ elements, character }: CharacterRender
       layerImages.push(surface.mouthImages.closed, surface.mouthImages.open);
     }
 
-    layerImages.forEach((src) => {
-      const image = new Image();
-      image.src = src;
-    });
+    const visualSource = getSurfaceVisualSource(surface);
+    const sceneLayers = visualSource?.type === "scene"
+      ? character.assets?.scenes?.[visualSource.sceneId]?.layers ?? []
+      : [];
+
+    return [
+      ...(visualSource?.type === "image" ? [visualSource.src] : []),
+      ...sceneLayers.map((layer) => layer.image).filter((src): src is string => Boolean(src)),
+      ...layerImages,
+    ].filter((src): src is string => Boolean(src));
+  }
+
+  function createSceneVisualLayer(layer: RuntimeSceneLayer) {
+    const layerElement = document.createElement("div");
+
+    layerElement.className = "character-sprite-scene-layer";
+    layerElement.dataset.layerId = layer.id;
+    layerElement.dataset.layerRole = layer.role;
+    layerElement.style.zIndex = String(layer.depth ?? 0);
+    applySceneLayerPlacement(layerElement, layer);
+
+    if (layer.color) {
+      layerElement.style.background = layer.color;
+    }
+
+    if (layer.image) {
+      const image = document.createElement("img");
+
+      image.src = layer.image;
+      image.alt = layer.alt ?? "";
+      image.draggable = false;
+      image.setAttribute("aria-hidden", layer.alt ? "false" : "true");
+      layerElement.append(image);
+    }
+
+    return layerElement;
+  }
+
+  function renderSceneVisual(sceneId: string) {
+    const scene = character.assets?.scenes?.[sceneId];
+
+    sceneVisualRoot.replaceChildren();
+    sceneVisualRoot.dataset.sceneId = sceneId;
+
+    scene?.layers
+      .filter((layer) => layer.role !== "character")
+      .filter((layer) => layer.image || layer.color || layer.role === "background")
+      .sort((current, next) => (current.depth ?? 0) - (next.depth ?? 0))
+      .forEach((layer) => {
+        sceneVisualRoot.append(createSceneVisualLayer(layer));
+      });
+  }
+
+  function applyVisualSource(visualSource: CharacterVisualSource | null) {
+    currentVisualSource = visualSource;
+
+    if (visualSource?.type === "scene") {
+      renderSceneVisual(visualSource.sceneId);
+      sceneVisualRoot.hidden = false;
+      elements.spriteImage.hidden = true;
+      elements.sprite.dataset.visualType = "scene";
+      return;
+    }
+
+    sceneVisualRoot.hidden = true;
+    delete elements.sprite.dataset.visualType;
+
+    if (visualSource?.type === "image" && elements.spriteImage.getAttribute("src") !== visualSource.src) {
+      elements.spriteImage.src = visualSource.src;
+    }
+
+    elements.spriteImage.hidden = false;
+  }
+
+  /**
+   * Warms image cache and waits for decoding before a visible surface swap.
+   */
+  async function preloadSurfaceImages(surface: CharacterSurface) {
+    await Promise.all(Array.from(new Set(getSurfaceImageSources(surface))).map(preloadImage));
   }
 
   function renderStaticPartLayers(surface: CharacterSurface) {
@@ -222,19 +371,29 @@ export function createCharacterRenderer({ elements, character }: CharacterRender
   }
 
   function applySurfaceDefinition(surface: CharacterSurface) {
-    const baseImage = getSurfaceBaseImage(surface);
+    const visualSource = getSurfaceVisualSource(surface);
 
     currentSurface = surface;
-    preloadSurfaceImages(surface);
     elements.sprite.dataset.surfaceId = surface.id;
     elements.spriteImage.alt = surface.alt ?? character.assets?.alt ?? character.profile.name;
+    applyVisualSource(visualSource);
+    renderStaticPartLayers(surface);
+  }
 
-    if (baseImage && elements.spriteImage.getAttribute("src") !== baseImage) {
-      elements.spriteImage.src = baseImage;
+  /**
+   * Applies a surface only after its images are ready, leaving the current surface visible while waiting.
+   */
+  async function applySurfaceDefinitionWhenReady(surface: CharacterSurface) {
+    const token = ++surfaceApplyToken;
+
+    await preloadSurfaceImages(surface);
+
+    if (token !== surfaceApplyToken) {
+      return false;
     }
 
-    elements.spriteImage.hidden = false;
-    renderStaticPartLayers(surface);
+    applySurfaceDefinition(surface);
+    return true;
   }
 
   function applyPartFrame(layerId: CharacterLayerId, layer: CharacterLayer, frameIndex: number, isActive: boolean) {
@@ -378,23 +537,23 @@ export function createCharacterRenderer({ elements, character }: CharacterRender
     elements.spriteImage.alt = character.assets?.alt ?? character.profile.name;
 
     const expressionAsset = character.assets
-      ? pickExpressionAsset(character.assets.expressions[state.expression], elements.spriteImage.getAttribute("src"))
+      ? pickExpressionAsset(character.assets.expressions[state.expression], currentVisualSource)
       : null;
     const surface = findSurfaceForExpression(state.expression, expressionAsset);
 
     if (surface) {
-      applySurfaceDefinition(surface);
-      startIdleLayerAnimations(surface);
+      void applySurfaceDefinitionWhenReady(surface).then((applied) => {
+        if (applied) {
+          startIdleLayerAnimations(surface);
+        }
+      });
     } else {
+      surfaceApplyToken += 1;
       currentSurface = null;
       delete elements.sprite.dataset.surfaceId;
       clearPartLayers();
 
-      if (expressionAsset && elements.spriteImage.getAttribute("src") !== expressionAsset) {
-        elements.spriteImage.src = expressionAsset;
-      }
-
-      elements.spriteImage.hidden = false;
+      applyVisualSource(expressionAsset);
     }
 
     if (state.lastTouchedPart) {
@@ -415,10 +574,11 @@ export function createCharacterRenderer({ elements, character }: CharacterRender
 
     stopLayerAnimations();
     stopIdleLayerAnimations();
-    applySurfaceDefinition(surface);
-    if (options.startIdleLayers ?? true) {
-      startIdleLayerAnimations(surface);
-    }
+    void applySurfaceDefinitionWhenReady(surface).then((applied) => {
+      if (applied && (options.startIdleLayers ?? true)) {
+        startIdleLayerAnimations(surface);
+      }
+    });
   }
 
   function setMode(mode: CharacterRuntimeMode) {
@@ -426,8 +586,10 @@ export function createCharacterRenderer({ elements, character }: CharacterRender
   }
 
   function destroy() {
+    surfaceApplyToken += 1;
     stopLayerAnimations();
     stopIdleLayerAnimations();
+    sceneVisualRoot.remove();
   }
 
   return {

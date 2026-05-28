@@ -39,6 +39,13 @@ function getLayoutBounds(elements: RuntimeElements) {
   return document.documentElement.getBoundingClientRect();
 }
 
+function refreshRuntimeAreaVariables(elements: RuntimeElements) {
+  const layoutBounds = getLayoutBounds(elements);
+
+  elements.stage.style.setProperty("--runtime-area-width", `${Math.max(0, Math.floor(layoutBounds.width))}px`);
+  elements.stage.style.setProperty("--runtime-area-height", `${Math.max(0, Math.floor(layoutBounds.height))}px`);
+}
+
 function getBottomAnchoredAvailableHeight(elements: RuntimeElements) {
   const layoutBounds = getLayoutBounds(elements);
   const stageRect = elements.stage.getBoundingClientRect();
@@ -79,6 +86,7 @@ export function initFloatingLayout({ elements }: FloatingLayoutOptions) {
 
   function refresh() {
     animationFrameId = null;
+    refreshRuntimeAreaVariables(elements);
 
     const rawAvailableHeight = elements.stage.dataset.positionMode === "custom"
       ? getCustomAvailableHeight(elements)
@@ -127,6 +135,8 @@ export function initFloatingLayout({ elements }: FloatingLayoutOptions) {
     resizeObserver?.disconnect();
     window.removeEventListener("resize", scheduleRefresh);
     elements.stage.style.removeProperty("--floating-content-max-height");
+    elements.stage.style.removeProperty("--runtime-area-width");
+    elements.stage.style.removeProperty("--runtime-area-height");
     delete elements.stage.dataset.floatingLayout;
   };
 }

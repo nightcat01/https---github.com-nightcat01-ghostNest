@@ -1,10 +1,10 @@
 import type {
   RuntimeAction,
   RuntimeCondition,
+  RuntimeControlOptions,
   RuntimeEventHandler,
   RuntimeEventMap,
   RuntimeEventName,
-  RuntimeFeatureOptions,
   RuntimeRule,
   RuntimeState,
 } from "../core/types.js";
@@ -19,7 +19,7 @@ type RuntimeEventBus = {
 type RuleRunnerOptions = {
   eventBus: RuntimeEventBus;
   rules: RuntimeRule[];
-  features: RuntimeFeatureOptions;
+  controls: RuntimeControlOptions;
   state: RuntimeState;
   ruleCooldowns: Map<string, number>;
   runActions: (actions: RuntimeAction[]) => void | Promise<void>;
@@ -37,10 +37,10 @@ function matchesRuleWhen(rule: RuntimeRule, payload: RuntimeEventMap[RuntimeEven
 }
 
 function createConditionChecker({
-  features,
+  controls,
   state,
   ruleCooldowns,
-}: Pick<RuleRunnerOptions, "features" | "state" | "ruleCooldowns">) {
+}: Pick<RuleRunnerOptions, "controls" | "state" | "ruleCooldowns">) {
   return function passesConditions(conditions: RuntimeCondition[] = []) {
     const now = Date.now();
     const passedCooldowns: Array<{ key: string; time: number }> = [];
@@ -48,7 +48,7 @@ function createConditionChecker({
     for (const condition of conditions) {
       switch (condition.type) {
         case "feature_enabled":
-          if (!features[condition.feature]) {
+          if (!controls[condition.feature]) {
             return false;
           }
           break;

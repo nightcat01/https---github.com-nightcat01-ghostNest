@@ -24,6 +24,15 @@ createDemoManagementMenuItems(character, {
 
 서비스에서 필요 없는 기능군은 빼고, 필요한 기능군만 가져와 조합하면 된다.
 
+사용자에게 노출할 메뉴와 개발자 도구 메뉴는 분리해서 가져갈 수 있다.
+
+```ts
+createDemoUserMenuItems(character);
+createDemoDeveloperMenuItems();
+```
+
+사용자 메뉴는 허용된 기능 실행과 개인 UI 설정에 집중하고, 개발자 메뉴는 diagnostics나 에셋/매핑 편집 진입점처럼 운영 사용자가 만지지 않아야 하는 도구를 담는다.
+
 ## 분리 기준
 
 항목 하나마다 파일을 만들기보다 기능군별로 나눈다.

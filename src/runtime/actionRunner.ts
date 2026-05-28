@@ -4,12 +4,17 @@ import type {
   ManagementMenuItem,
   ManagementMenuOptions,
   DialogueMessage,
+  RuntimeControlOptions,
+  RuntimeNavigationOptions,
   RuntimeAction,
   RuntimeActionHandler,
   RuntimeEventMap,
   RuntimeEventName,
   RuntimePlugin,
+  SpeechBalloonSizeOptions,
+  SpeechLayoutOptions,
   RuntimeState,
+  RuntimeUserPreferenceOptions,
   StorageAdapter,
 } from "../core/types.js";
 import type { RuntimeElements } from "./domElements.js";
@@ -38,12 +43,18 @@ type ActionRunnerContext = {
   storageAdapter: StorageAdapter;
   actionTimers: Map<string, number>;
   managementMenu?: ManagementMenuOptions | undefined;
+  navigation?: RuntimeNavigationOptions | undefined;
+  speechLayout?: SpeechLayoutOptions | undefined;
+  defaultSpeechBalloonSize: SpeechBalloonSizeOptions;
+  controls: RuntimeControlOptions;
+  userPreferences: RuntimeUserPreferenceOptions;
   eventBus: RuntimeEventEmitter;
   renderSpeech: (message: DialogueMessage) => void;
   renderPreviewSpeech: (message: DialogueMessage) => void;
   renderCharacterState: () => void;
   applySurface: (surfaceId: string, options?: { startIdleLayers?: boolean }) => void;
   setLayerAnimationActive: (layerId: string, isActive: boolean) => void;
+  applySpeechBalloonSize: (size?: Partial<SpeechBalloonSizeOptions>) => void;
   addLog: (label: string) => void;
   touchInteraction: () => void;
 };
@@ -59,6 +70,20 @@ function getManagementMenuTargets(elements: RuntimeElements) {
   };
 }
 
+/**
+ * Applies an optional host base path to relative site navigation routes.
+ */
+function resolveNavigationRoute(route: string, basePath: string | undefined) {
+  if (!basePath || route.startsWith("/") || /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(route)) {
+    return route;
+  }
+
+  const normalizedBasePath = basePath.replace(/\/$/, "");
+  const normalizedRoute = route.replace(/^\.\//, "").replace(/^\//, "");
+
+  return `${normalizedBasePath}/${normalizedRoute}`;
+}
+
 export function createActionRunner(context: ActionRunnerContext) {
   const {
     elements,
@@ -68,12 +93,18 @@ export function createActionRunner(context: ActionRunnerContext) {
     storageAdapter,
     actionTimers,
     managementMenu,
+    navigation,
+    speechLayout,
+    defaultSpeechBalloonSize,
+    controls,
+    userPreferences,
     eventBus,
     renderSpeech,
     renderPreviewSpeech,
     renderCharacterState,
     applySurface,
     setLayerAnimationActive,
+    applySpeechBalloonSize,
     addLog,
     touchInteraction,
   } = context;
@@ -81,6 +112,10 @@ export function createActionRunner(context: ActionRunnerContext) {
   const actionHandlers = new Map<string, RuntimeActionHandler>();
   const defaultManagementMenuOptions = cloneManagementMenuOptions(managementMenu);
   const managementMenuOptions = cloneManagementMenuOptions(defaultManagementMenuOptions);
+  const defaultSpeechLayout: Required<SpeechLayoutOptions> = {
+    mode: speechLayout?.mode ?? "floating",
+    placement: speechLayout?.placement ?? "below-character",
+  };
   const runtimeUiPreferences: RuntimeUiPreferences = {};
 
   const managementMenuOptionsReady = loadManagementMenuOptions();
@@ -145,8 +180,16 @@ export function createActionRunner(context: ActionRunnerContext) {
     }
   }
 
+  /**
+   * Applies the speech presentation layout to the stage dataset.
+   */
+  function applySpeechLayout(layout: SpeechLayoutOptions | undefined) {
+    elements.stage.dataset.speechLayout = layout?.mode ?? defaultSpeechLayout.mode;
+    elements.stage.dataset.speechPlacement = layout?.placement ?? defaultSpeechLayout.placement;
+  }
+
   function applyCharacterPosition(position: RuntimeUiPreferences["characterPosition"]) {
-    if (!position) {
+    if (!userPreferences.characterPosition || !position) {
       return;
     }
 
@@ -158,6 +201,8 @@ export function createActionRunner(context: ActionRunnerContext) {
   function applyRuntimeUiPreferences() {
     applyBalloonTheme(runtimeUiPreferences.balloonTheme);
     applyBalloonFontSize(runtimeUiPreferences.balloonFontSize);
+    applySpeechLayout(runtimeUiPreferences.speechLayout);
+    applySpeechBalloonSize(runtimeUiPreferences.speechBalloonSize);
     applyCharacterPosition(runtimeUiPreferences.characterPosition);
   }
 
@@ -177,6 +222,18 @@ export function createActionRunner(context: ActionRunnerContext) {
         runtimeUiPreferences.balloonFontSize = storedPreferences.balloonFontSize;
       } else {
         delete runtimeUiPreferences.balloonFontSize;
+      }
+
+      if (storedPreferences.speechLayout) {
+        runtimeUiPreferences.speechLayout = storedPreferences.speechLayout;
+      } else {
+        delete runtimeUiPreferences.speechLayout;
+      }
+
+      if (storedPreferences.speechBalloonSize) {
+        runtimeUiPreferences.speechBalloonSize = storedPreferences.speechBalloonSize;
+      } else {
+        delete runtimeUiPreferences.speechBalloonSize;
       }
 
       if (storedPreferences.characterPosition) {
@@ -212,6 +269,8 @@ export function createActionRunner(context: ActionRunnerContext) {
   function resetRuntimeUiPreferences() {
     delete runtimeUiPreferences.balloonTheme;
     delete runtimeUiPreferences.balloonFontSize;
+    delete runtimeUiPreferences.speechLayout;
+    delete runtimeUiPreferences.speechBalloonSize;
     delete runtimeUiPreferences.characterPosition;
     applyRuntimeUiPreferences();
     elements.stage.style.removeProperty("--character-stage-x");
@@ -252,16 +311,28 @@ export function createActionRunner(context: ActionRunnerContext) {
 
   // Register built-in actions
   registerAction("speak", async (action, _) => {
+    if (!controls.speech) {
+      return;
+    }
+
     const a = action as Extract<BuiltinRuntimeAction, { type: "speak" }>;
     renderSpeech(await dialogue.line(a.category));
   });
 
   registerAction("speak_text", async (action, _) => {
+    if (!controls.speech) {
+      return;
+    }
+
     const a = action as Extract<BuiltinRuntimeAction, { type: "speak_text" }>;
     renderSpeech(await dialogue.custom(a.text));
   });
 
   registerAction("speak_script", async (action, _) => {
+    if (!controls.speech) {
+      return;
+    }
+
     const a = action as Extract<BuiltinRuntimeAction, { type: "speak_script" }>;
     const message = await dialogue.custom(a.text);
     renderSpeech({ ...message, script: a.script });
@@ -298,6 +369,10 @@ export function createActionRunner(context: ActionRunnerContext) {
   });
 
   registerAction("call_plugin", async (action, _) => {
+    if (!controls.plugins) {
+      return;
+    }
+
     const a = action as Extract<BuiltinRuntimeAction, { type: "call_plugin" }>;
     const plugin = pluginRegistry.get(a.pluginId);
 
@@ -396,7 +471,14 @@ export function createActionRunner(context: ActionRunnerContext) {
 
   registerAction("navigate", (action, _) => {
     const a = action as Extract<BuiltinRuntimeAction, { type: "navigate" }>;
-    window.location.assign(a.route);
+    const route = resolveNavigationRoute(a.route, navigation?.basePath);
+
+    if (navigation?.navigate) {
+      void navigation.navigate(route);
+      return;
+    }
+
+    window.location.assign(route);
   });
 
   registerAction("set_state", (action, _) => {
@@ -472,6 +554,10 @@ export function createActionRunner(context: ActionRunnerContext) {
   });
 
   registerAction("move_character", async (action, _) => {
+    if (!userPreferences.characterPosition) {
+      return;
+    }
+
     const a = action as Extract<BuiltinRuntimeAction, { type: "move_character" }>;
     await runtimeUiPreferencesReady;
 
@@ -481,6 +567,10 @@ export function createActionRunner(context: ActionRunnerContext) {
   });
 
   registerAction("change_balloon", async (action, _) => {
+    if (!userPreferences.speechTheme) {
+      return;
+    }
+
     const a = action as Extract<BuiltinRuntimeAction, { type: "change_balloon" }>;
     await runtimeUiPreferencesReady;
 
@@ -490,6 +580,10 @@ export function createActionRunner(context: ActionRunnerContext) {
   });
 
   registerAction("change_balloon_font_size", async (action, _) => {
+    if (!userPreferences.speechFontSize) {
+      return;
+    }
+
     const a = action as Extract<BuiltinRuntimeAction, { type: "change_balloon_font_size" }>;
     await runtimeUiPreferencesReady;
 
@@ -498,7 +592,50 @@ export function createActionRunner(context: ActionRunnerContext) {
     await saveRuntimeUiPreferences();
   });
 
+  registerAction("change_speech_layout", async (action, _) => {
+    if (!userPreferences.speechLayout) {
+      return;
+    }
+
+    const a = action as Extract<BuiltinRuntimeAction, { type: "change_speech_layout" }>;
+    await runtimeUiPreferencesReady;
+
+    runtimeUiPreferences.speechLayout = {
+      mode: a.mode ?? runtimeUiPreferences.speechLayout?.mode ?? defaultSpeechLayout.mode,
+      placement: a.placement ?? runtimeUiPreferences.speechLayout?.placement ?? defaultSpeechLayout.placement,
+    };
+    applySpeechLayout(runtimeUiPreferences.speechLayout);
+    await saveRuntimeUiPreferences();
+  });
+
+  registerAction("set_speech_balloon_size", async (action, _) => {
+    if (!userPreferences.speechSize) {
+      return;
+    }
+
+    const a = action as Extract<BuiltinRuntimeAction, { type: "set_speech_balloon_size" }>;
+    await runtimeUiPreferencesReady;
+
+    if (a.reset) {
+      delete runtimeUiPreferences.speechBalloonSize;
+      applySpeechBalloonSize(defaultSpeechBalloonSize);
+      await saveRuntimeUiPreferences();
+      return;
+    }
+
+    runtimeUiPreferences.speechBalloonSize = {
+      ...runtimeUiPreferences.speechBalloonSize,
+      ...a.size,
+    };
+    applySpeechBalloonSize(runtimeUiPreferences.speechBalloonSize);
+    await saveRuntimeUiPreferences();
+  });
+
   registerAction("open_management_menu", async (action, context) => {
+    if (!controls.managementMenu) {
+      return;
+    }
+
     const a = action as Extract<BuiltinRuntimeAction, { type: "open_management_menu" }>;
     await managementMenuOptionsReady;
 
@@ -512,6 +649,10 @@ export function createActionRunner(context: ActionRunnerContext) {
   });
 
   registerAction("set_management_menu_display", async (action, _) => {
+    if (!controls.managementMenu) {
+      return;
+    }
+
     const a = action as Extract<BuiltinRuntimeAction, { type: "set_management_menu_display" }>;
     await managementMenuOptionsReady;
 

@@ -7,6 +7,9 @@ import { createUiMenuItems } from "./menuPresets/uiMenuItems.js";
 
 export type DemoManagementMenuOptions = {
   includeDeveloperTools?: boolean;
+  includeUserMenus?: boolean;
+  includePluginMenus?: boolean;
+  includeCharacterMenus?: boolean;
 };
 
 function createDeveloperToolsMenuItem(): ManagementMenuItem {
@@ -26,11 +29,14 @@ export function createDemoManagementMenuItems(
   character?: CharacterDefinition,
   options: DemoManagementMenuOptions = {},
 ): ManagementMenuItem[] {
+  const includeUserMenus = options.includeUserMenus ?? true;
+  const includePluginMenus = options.includePluginMenus ?? true;
+  const includeCharacterMenus = options.includeCharacterMenus ?? true;
   const menuItems = [
-    ...createDialogueMenuItems(),
-    ...createPluginMenuItems(),
-    ...createUiMenuItems(),
-    ...createCharacterMenuItems(character),
+    ...(includeUserMenus ? createDialogueMenuItems() : []),
+    ...(includePluginMenus ? createPluginMenuItems() : []),
+    ...(includeUserMenus ? createUiMenuItems() : []),
+    ...(includeCharacterMenus ? createCharacterMenuItems(character) : []),
   ];
 
   if (options.includeDeveloperTools) {
@@ -38,4 +44,23 @@ export function createDemoManagementMenuItems(
   }
 
   return menuItems;
+}
+
+/**
+ * Creates user-facing menu items without developer-only tools.
+ */
+export function createDemoUserMenuItems(character?: CharacterDefinition): ManagementMenuItem[] {
+  return createDemoManagementMenuItems(character, {
+    includeDeveloperTools: false,
+    includeUserMenus: true,
+    includePluginMenus: true,
+    includeCharacterMenus: true,
+  });
+}
+
+/**
+ * Creates developer-facing menu items for integration and diagnostics.
+ */
+export function createDemoDeveloperMenuItems(): ManagementMenuItem[] {
+  return [createDeveloperToolsMenuItem()];
 }

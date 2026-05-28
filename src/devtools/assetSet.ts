@@ -1,12 +1,14 @@
 import { requireElement } from "./assetShared.js";
 import {
   AssetFile,
+  createDevtoolsApiPath,
   fetchAssetFiles,
   fetchCharacterAssets,
   readApiJson,
 } from "./assetApi.js";
 import { populateCharacterSelect } from "./assetCharacterSelect.js";
 import { createAssetOptionLabel, filterAssetFiles } from "./assetSelect.js";
+import type { CharacterExpressionAsset, CharacterVisualSource, RuntimeScene } from "../core/types.js";
 
 type SurfaceSaveResponse = {
   ok?: boolean;
@@ -19,6 +21,7 @@ type SurfaceSaveResponse = {
 };
 type ExistingSurface = {
   surfaceId: string;
+  sceneId?: string;
   image?: string;
   expression?: string;
   alt?: string;
@@ -33,6 +36,7 @@ const surfaceExpressionSelect = requireElement(document.querySelector<HTMLSelect
 const surfaceAltInput = requireElement(document.querySelector<HTMLInputElement>("#surfaceAltInput"), "#surfaceAltInput");
 const baseAssetSelect = requireElement(document.querySelector<HTMLSelectElement>("#baseAssetSelect"), "#baseAssetSelect");
 const surfaceImageInput = requireElement(document.querySelector<HTMLInputElement>("#surfaceImageInput"), "#surfaceImageInput");
+const surfaceSceneSelect = requireElement(document.querySelector<HTMLSelectElement>("#surfaceSceneSelect"), "#surfaceSceneSelect");
 const preview = requireElement(document.querySelector<HTMLElement>("#setPreview"), "#setPreview");
 const output = requireElement(document.querySelector<HTMLElement>("#setOutput"), "#setOutput");
 const status = requireElement(document.querySelector<HTMLElement>("#setStatus"), "#setStatus");
@@ -40,8 +44,10 @@ const saveButton = requireElement(document.querySelector<HTMLButtonElement>("#sa
 const deleteButton = requireElement(document.querySelector<HTMLButtonElement>("#deleteSurfaceConfigButton"), "#deleteSurfaceConfigButton");
 
 let existingSurfaces: ExistingSurface[] = [];
-let existingExpressions: Record<string, string | string[]> = {};
+let existingExpressions: Record<string, CharacterExpressionAsset> = {};
+let existingScenes: Record<string, RuntimeScene> = {};
 let savedAssetFiles: AssetFile[] = [];
+type SceneVisualSource = Extract<CharacterVisualSource, { type: "scene" }>;
 
 /**
  * Keeps Set options in numeric id order when possible.
@@ -61,6 +67,7 @@ function sortExistingSurfaces(surfaces: ExistingSurface[]) {
 function createSurfaceSnippet() {
   const surfaceId = surfaceIdInput.value.trim() || "0";
   const image = surfaceImageInput.value.trim();
+  const sceneId = surfaceSceneSelect.value.trim();
   const expression = surfaceExpressionSelect.value.trim();
   const alt = surfaceAltInput.value.trim();
 
@@ -68,6 +75,7 @@ function createSurfaceSnippet() {
     surfaceId,
     surface: {
       id: surfaceId,
+      ...(sceneId ? { visual: { type: "scene", sceneId } } : {}),
       ...(image ? { image } : {}),
       ...(expression ? { expression } : {}),
       ...(alt ? { alt } : {}),
@@ -80,12 +88,29 @@ function createSurfaceSnippet() {
  */
 function getExpressionAssetPaths(expression: string) {
   const savedAsset = existingExpressions[expression];
-
-  return Array.isArray(savedAsset)
+  const candidates = Array.isArray(savedAsset)
     ? savedAsset
     : savedAsset
       ? [savedAsset]
       : [];
+
+  return candidates.filter((asset): asset is string => typeof asset === "string");
+}
+
+/**
+ * Returns saved Scene visual candidates for an expression.
+ */
+function getExpressionSceneIds(expression: string) {
+  const savedAsset = existingExpressions[expression];
+  const candidates = Array.isArray(savedAsset)
+    ? savedAsset
+    : savedAsset
+      ? [savedAsset]
+      : [];
+
+  return candidates
+    .filter((asset): asset is SceneVisualSource => typeof asset !== "string" && asset.type === "scene")
+    .map((asset) => asset.sceneId);
 }
 
 /**
@@ -94,17 +119,22 @@ function getExpressionAssetPaths(expression: string) {
 function validateSurfaceSnippet(surfaceSnippet: ReturnType<typeof createSurfaceSnippet>) {
   const expression = surfaceSnippet.surface.expression;
   const image = surfaceSnippet.surface.image;
+  const sceneId = surfaceSnippet.surface.visual?.type === "scene" ? surfaceSnippet.surface.visual.sceneId : "";
 
   if (!expression) {
     return "Set에 연결할 Expression을 선택하세요.";
   }
 
-  if (!image) {
-    return "Set의 기준 base 이미지를 선택하거나 직접 경로를 입력하세요.";
+  if (!image && !sceneId) {
+    return "Set의 기준 이미지 또는 Scene 조합을 선택하세요.";
   }
 
-  if (!getExpressionAssetPaths(expression).includes(image)) {
+  if (image && !getExpressionAssetPaths(expression).includes(image)) {
     return `먼저 Expression '${expression}' 등록을 완료하고, 그 후보 안에 Set base 이미지를 포함하세요.`;
+  }
+
+  if (sceneId && !getExpressionSceneIds(expression).includes(sceneId)) {
+    return `먼저 Expression '${expression}' 등록을 완료하고, 그 후보 안에 Scene '${sceneId}'를 포함하세요.`;
   }
 
   return null;
@@ -118,7 +148,9 @@ function renderOutputs() {
 
   preview.replaceChildren();
 
-  if (surfaceSnippet.surface.image) {
+  if (surfaceSnippet.surface.visual?.type === "scene") {
+    renderScenePreview(surfaceSnippet.surface.visual.sceneId);
+  } else if (surfaceSnippet.surface.image) {
     const image = document.createElement("img");
 
     image.src = surfaceSnippet.surface.image;
@@ -138,7 +170,60 @@ function renderOutputs() {
 }
 
 /**
- * Renders base asset options for Set base selection.
+ * Renders a saved Scene composition as the Set visual preview.
+ */
+function renderScenePreview(sceneId: string) {
+  const scene = existingScenes[sceneId];
+  const stage = document.createElement("div");
+
+  stage.className = "asset-scene-preview asset-set-scene-preview";
+  stage.dataset.sceneId = sceneId;
+
+  if (!scene) {
+    const empty = document.createElement("p");
+
+    empty.textContent = `${sceneId} Scene 조합을 찾지 못했어요.`;
+    preview.append(empty);
+    return;
+  }
+
+  scene.layers
+    .filter((layer) => layer.role !== "character")
+    .filter((layer) => layer.image || layer.color || layer.role === "background")
+    .sort((current, next) => (current.depth ?? 0) - (next.depth ?? 0))
+    .forEach((layer) => {
+      const layerElement = document.createElement("div");
+
+      layerElement.className = "asset-scene-preview-layer";
+      layerElement.style.zIndex = String(layer.depth ?? 0);
+      if (layer.placement) {
+        layerElement.style.left = `${layer.placement.x}%`;
+        layerElement.style.top = `${layer.placement.y}%`;
+        layerElement.style.width = `${layer.placement.width}%`;
+        layerElement.style.height = `${layer.placement.height}%`;
+      } else {
+        layerElement.style.inset = "0";
+      }
+
+      if (layer.color) {
+        layerElement.style.background = layer.color;
+      }
+
+      if (layer.image) {
+        const image = document.createElement("img");
+
+        image.src = layer.image;
+        image.alt = layer.alt ?? layer.id;
+        layerElement.append(image);
+      }
+
+      stage.append(layerElement);
+    });
+  preview.append(stage);
+}
+
+/**
+ * Renders base asset options for Set image selection.
  */
 function renderBaseAssetOptions() {
   const baseAssets = filterAssetFiles(savedAssetFiles, ["base"], { includeCommon: false });
@@ -173,6 +258,25 @@ function renderExpressionOptions() {
 }
 
 /**
+ * Renders saved Scene composition options separately from image files.
+ */
+function renderSceneOptions() {
+  const currentValue = surfaceSceneSelect.value;
+  const scenes = Object.values(existingScenes).sort((left, right) =>
+    left.id.localeCompare(right.id, undefined, { numeric: true, sensitivity: "base" }),
+  );
+
+  surfaceSceneSelect.replaceChildren(new Option("Scene 조합 사용 안 함", ""));
+  scenes.forEach((scene) => {
+    surfaceSceneSelect.append(new Option(`${scene.id} / ${scene.layers.length} layer`, scene.id));
+  });
+
+  if (currentValue && Array.from(surfaceSceneSelect.options).some((option) => option.value === currentValue)) {
+    surfaceSceneSelect.value = currentValue;
+  }
+}
+
+/**
  * Loads saved base image files.
  */
 async function loadSavedAssetFiles() {
@@ -192,7 +296,9 @@ async function loadCharacterAssets() {
   const surfaces = result.assets?.surfaces ?? {};
 
   existingExpressions = result.assets?.expressions ?? {};
+  existingScenes = result.assets?.scenes ?? {};
   renderExpressionOptions();
+  renderSceneOptions();
   existingSurfaces = sortExistingSurfaces(Object.entries(surfaces).map(([surfaceId, surface]) => {
     const existingSurface: ExistingSurface = {
       surfaceId: surface.id ?? surfaceId,
@@ -201,6 +307,10 @@ async function loadCharacterAssets() {
 
     if (surface.image) {
       existingSurface.image = surface.image;
+    }
+
+    if (surface.visual?.type === "scene") {
+      existingSurface.sceneId = surface.visual.sceneId;
     }
 
     if (surface.expression) {
@@ -263,6 +373,7 @@ function applySurfaceSelection() {
     surfaceAltInput.value = "";
     surfaceImageInput.value = "";
     baseAssetSelect.value = "";
+    surfaceSceneSelect.value = "";
     renderOutputs();
     return;
   }
@@ -274,6 +385,7 @@ function applySurfaceSelection() {
   surfaceAltInput.value = surface?.alt ?? "";
   surfaceImageInput.value = surface?.image ?? "";
   baseAssetSelect.value = surface?.image ?? "";
+  surfaceSceneSelect.value = surface?.sceneId ?? "";
   renderOutputs();
 }
 
@@ -293,7 +405,7 @@ async function saveSurfaceConfig() {
   status.textContent = "Set을 저장하는 중이에요.";
 
   try {
-    const response = await fetch("/api/devtools/save-character-surface", {
+    const response = await fetch(createDevtoolsApiPath("/api/devtools/save-character-surface"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -340,7 +452,7 @@ async function deleteSurfaceConfig() {
   status.textContent = "Set을 삭제하는 중이에요.";
 
   try {
-    const response = await fetch("/api/devtools/delete-character-surface", {
+    const response = await fetch(createDevtoolsApiPath("/api/devtools/delete-character-surface"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -374,6 +486,16 @@ function init() {
   surfaceSelect.addEventListener("change", applySurfaceSelection);
   baseAssetSelect.addEventListener("change", () => {
     surfaceImageInput.value = baseAssetSelect.value;
+    if (baseAssetSelect.value) {
+      surfaceSceneSelect.value = "";
+    }
+    renderOutputs();
+  });
+  surfaceSceneSelect.addEventListener("change", () => {
+    if (surfaceSceneSelect.value) {
+      surfaceImageInput.value = "";
+      baseAssetSelect.value = "";
+    }
     renderOutputs();
   });
   [surfaceIdInput, surfaceExpressionSelect, surfaceAltInput, surfaceImageInput].forEach((input) => {

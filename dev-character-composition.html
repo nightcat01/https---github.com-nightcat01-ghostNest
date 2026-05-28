@@ -16,14 +16,9 @@
         <a class="asset-lab-back" href="./dev-character.html">캐릭터 설정</a>
       </header>
 
-      <nav class="asset-tool-nav" aria-label="Character setting pages">
-        <a href="./dev-character.html">설정 홈</a>
-        <a href="./dev-assets-crop.html">Crop</a>
-        <a href="./dev-assets-layer.html">Layer 만들기</a>
-        <a aria-current="page" href="./dev-character-composition.html">Set 조합하기</a>
-      </nav>
+      <nav class="asset-tool-nav" aria-label="Character setting pages" data-character-nav data-current-page="composition"></nav>
 
-      <section class="asset-lab-grid" aria-label="Character set composer">
+      <section class="asset-lab-grid asset-character-editor-grid" aria-label="Character set composer">
         <section class="asset-lab-panel">
           <div class="asset-lab-section">
             <h2>캐릭터</h2>
@@ -124,6 +119,7 @@
         </section>
       </section>
     </main>
+    <script type="module" src="./dist/devtools/assetCharacterNav.js"></script>
     <script type="module" src="./dist/devtools/assetComposition.js"></script>
   </body>
 </html>

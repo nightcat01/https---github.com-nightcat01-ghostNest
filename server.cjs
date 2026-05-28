@@ -73,7 +73,34 @@ function getCharacterDevServerConfig() {
   return {
     allowLocalhost: devServer.allowLocalhost !== false,
     allowedIps,
+    basePath: normalizeBasePath(devServer.basePath ?? process.env.GHOSTNEST_BASE_PATH ?? ""),
   };
+}
+
+function normalizeBasePath(basePath) {
+  const normalizedPath = String(basePath ?? "").trim().replaceAll("\\", "/").replace(/\/+$/, "");
+
+  if (!normalizedPath || normalizedPath === "/") {
+    return "";
+  }
+
+  return normalizedPath.startsWith("/") ? normalizedPath : `/${normalizedPath}`;
+}
+
+function stripConfiguredBasePath(pathname) {
+  const basePath = getCharacterDevServerConfig().basePath;
+
+  if (!basePath) {
+    return pathname;
+  }
+
+  if (pathname === basePath) {
+    return "/";
+  }
+
+  return pathname.startsWith(`${basePath}/`)
+    ? pathname.slice(basePath.length)
+    : pathname;
 }
 
 function normalizeRemoteAddress(address) {
@@ -117,6 +144,8 @@ function sendDevtoolsForbidden(response, request) {
 }
 
 function isCharacterDevtoolsStaticPath(pathname) {
+  const normalizedPathname = stripConfiguredBasePath(pathname);
+
   return [
     "/dev-character.html",
     "/dev-character-create.html",
@@ -124,9 +153,12 @@ function isCharacterDevtoolsStaticPath(pathname) {
     "/dev-character-set.html",
     "/dev-character-scene.html",
     "/dev-character-composition.html",
+    "/dev-nanika-mapping.html",
+    "/dev-assets.html",
+    "/dev-assets-comfy.html",
     "/dev-assets-layer.html",
     "/dev-assets-crop.html",
-  ].includes(pathname) || pathname.startsWith("/dist/devtools/");
+  ].includes(normalizedPathname) || normalizedPathname.startsWith("/dist/devtools/");
 }
 
 function getCharacterWorkspaceResponse() {
@@ -161,6 +193,7 @@ function updateCharacterWorkspaceConfig(body) {
   };
   const nextDevServer = {
     allowLocalhost: body.allowLocalhost !== false,
+    basePath: normalizeBasePath(body.basePath ?? getCharacterDevServerConfig().basePath),
     allowedIps: Array.isArray(body.allowedIps)
       ? body.allowedIps.map((ip) => String(ip).trim()).filter(Boolean)
       : String(body.allowedIps ?? "")
@@ -339,7 +372,8 @@ const mimeTypes = {
 
 function resolveRequestPath(url) {
   const pathname = new URL(url, `http://127.0.0.1:${port}`).pathname;
-  const requestedPath = pathname === "/" ? "/index.html" : pathname;
+  const normalizedPathname = stripConfiguredBasePath(pathname);
+  const requestedPath = normalizedPathname === "/" ? "/index.html" : normalizedPathname;
   const filePath = path.normalize(path.join(root, requestedPath));
 
   if (filePath !== root && !filePath.startsWith(rootWithSeparator)) {
@@ -663,6 +697,66 @@ function formatAssetsLiteral(assets) {
   return formatObjectLiteral(assets, 6);
 }
 
+/**
+ * Creates stable export names for split character asset modules.
+ */
+function createCharacterAssetExportNames(characterId) {
+  const exportName = toExportName(characterId);
+
+  return {
+    assetMeta: `${exportName}AssetMeta`,
+    expressions: `${exportName}Expressions`,
+    surfaces: `${exportName}Surfaces`,
+    defaultScene: `${exportName}DefaultScene`,
+    scenes: `${exportName}Scenes`,
+  };
+}
+
+/**
+ * Creates the source text for split TypeScript asset modules.
+ */
+function createCharacterSourceAssetFiles(characterId, assets) {
+  const names = createCharacterAssetExportNames(characterId);
+
+  return {
+    meta: `import type { CharacterAssets } from "../../../core/types.js";\n\nexport const ${names.assetMeta} = ${JSON.stringify({
+      alt: assets.alt,
+      ...(assets.hitAreas ? { hitAreas: assets.hitAreas } : {}),
+    }, null, 2)} satisfies Pick<CharacterAssets, "alt" | "hitAreas">;\n`,
+    expressions: `import type { CharacterAssets } from "../../../core/types.js";\n\nexport const ${names.expressions} = ${JSON.stringify(assets.expressions ?? {}, null, 2)} satisfies CharacterAssets["expressions"];\n`,
+    surfaces: `import type { CharacterAssets } from "../../../core/types.js";\n\nexport const ${names.surfaces} = ${JSON.stringify(assets.surfaces ?? {}, null, 2)} satisfies NonNullable<CharacterAssets["surfaces"]>;\n`,
+    scenes: `import type { CharacterAssets } from "../../../core/types.js";\n\nexport const ${names.defaultScene} = ${JSON.stringify(assets.defaultScene ?? "")};\n\nexport const ${names.scenes} = ${JSON.stringify(assets.scenes ?? {}, null, 2)} satisfies NonNullable<CharacterAssets["scenes"]>;\n`,
+  };
+}
+
+/**
+ * Creates the source text for split built JavaScript asset modules.
+ */
+function createCharacterBuildAssetFiles(characterId, assets) {
+  const names = createCharacterAssetExportNames(characterId);
+
+  return {
+    meta: `export const ${names.assetMeta} = ${JSON.stringify({
+      alt: assets.alt,
+      ...(assets.hitAreas ? { hitAreas: assets.hitAreas } : {}),
+    }, null, 2)};\n`,
+    expressions: `export const ${names.expressions} = ${JSON.stringify(assets.expressions ?? {}, null, 2)};\n`,
+    surfaces: `export const ${names.surfaces} = ${JSON.stringify(assets.surfaces ?? {}, null, 2)};\n`,
+    scenes: `export const ${names.defaultScene} = ${JSON.stringify(assets.defaultScene ?? "")};\n\nexport const ${names.scenes} = ${JSON.stringify(assets.scenes ?? {}, null, 2)};\n`,
+  };
+}
+
+/**
+ * Creates the character index module that only composes split asset modules.
+ */
+function createCharacterIndexFile(characterId, options = {}) {
+  const exportName = toExportName(characterId);
+  const names = createCharacterAssetExportNames(characterId);
+  const includeTypeImport = options.includeTypeImport ?? true;
+
+  return `import { ${exportName}Lines } from "./lines.js";\nimport { ${exportName}Profile } from "./profile.js";\nimport { ${names.expressions} } from "./assets/expressions.js";\nimport { ${names.assetMeta} } from "./assets/meta.js";\nimport { ${names.defaultScene}, ${names.scenes} } from "./assets/scenes.js";\nimport { ${names.surfaces} } from "./assets/surfaces.js";\n${includeTypeImport ? 'import type { CharacterDefinition } from "../../core/types.js";\n' : ""}\nexport const ${exportName}${includeTypeImport ? ": CharacterDefinition" : ""} = {\n  profile: ${exportName}Profile,\n  lines: ${exportName}Lines,\n  assets: {\n    ...${names.assetMeta},\n    expressions: ${names.expressions},\n    surfaces: ${names.surfaces},\n    ...(${names.defaultScene} ? { defaultScene: ${names.defaultScene} } : {}),\n    scenes: ${names.scenes},\n  },\n};\n\nexport default ${exportName};\n`;
+}
+
 function insertPropertyBeforeClose(source, blockEnd, text) {
   const prefix = source.slice(0, blockEnd).replace(/\s*$/, "");
   const suffix = source.slice(blockEnd);
@@ -934,16 +1028,26 @@ async function saveCharacterAssets(body, mergeAssets) {
   const characterBuildPath = resolveCharacterBuildPath(safeCharacterId);
   const currentAssets = normalizeCharacterAssets(safeCharacterId, await readEditableCharacterAssets(safeCharacterId));
   const nextAssets = normalizeCharacterAssets(safeCharacterId, mergeAssets(currentAssets));
-  const source = await fs.promises.readFile(characterSourcePath, "utf8");
-  const updatedSource = replaceCharacterAssetsSource(source, nextAssets);
+  const sourceDirectory = path.dirname(characterSourcePath);
+  const sourceAssetFiles = createCharacterSourceAssetFiles(safeCharacterId, nextAssets);
 
-  await fs.promises.writeFile(characterSourcePath, updatedSource, "utf8");
+  await fs.promises.mkdir(path.join(sourceDirectory, "assets"), { recursive: true });
+  await fs.promises.writeFile(path.join(sourceDirectory, "assets", "meta.ts"), sourceAssetFiles.meta, "utf8");
+  await fs.promises.writeFile(path.join(sourceDirectory, "assets", "expressions.ts"), sourceAssetFiles.expressions, "utf8");
+  await fs.promises.writeFile(path.join(sourceDirectory, "assets", "surfaces.ts"), sourceAssetFiles.surfaces, "utf8");
+  await fs.promises.writeFile(path.join(sourceDirectory, "assets", "scenes.ts"), sourceAssetFiles.scenes, "utf8");
+  await fs.promises.writeFile(characterSourcePath, createCharacterIndexFile(safeCharacterId, { includeTypeImport: true }), "utf8");
 
   if (characterBuildPath) {
-    const buildSource = await fs.promises.readFile(characterBuildPath, "utf8");
-    const updatedBuildSource = replaceCharacterAssetsSource(buildSource, nextAssets);
+    const buildDirectory = path.dirname(characterBuildPath);
+    const buildAssetFiles = createCharacterBuildAssetFiles(safeCharacterId, nextAssets);
 
-    await fs.promises.writeFile(characterBuildPath, updatedBuildSource, "utf8");
+    await fs.promises.mkdir(path.join(buildDirectory, "assets"), { recursive: true });
+    await fs.promises.writeFile(path.join(buildDirectory, "assets", "meta.js"), buildAssetFiles.meta, "utf8");
+    await fs.promises.writeFile(path.join(buildDirectory, "assets", "expressions.js"), buildAssetFiles.expressions, "utf8");
+    await fs.promises.writeFile(path.join(buildDirectory, "assets", "surfaces.js"), buildAssetFiles.surfaces, "utf8");
+    await fs.promises.writeFile(path.join(buildDirectory, "assets", "scenes.js"), buildAssetFiles.scenes, "utf8");
+    await fs.promises.writeFile(characterBuildPath, createCharacterIndexFile(safeCharacterId, { includeTypeImport: false }), "utf8");
   }
 
   return {
@@ -1156,7 +1260,27 @@ async function saveCharacterSurface(body) {
 async function saveCharacterExpression(body) {
   const expression = String(body.expression ?? body.expressionId ?? "").trim();
   const assets = Array.isArray(body.assets)
-    ? body.assets.filter((asset) => typeof asset === "string" && asset.trim()).map((asset) => asset.trim())
+    ? body.assets
+      .map((asset) => {
+        if (typeof asset === "string") {
+          return asset.trim();
+        }
+
+        if (asset && typeof asset === "object" && asset.type === "scene") {
+          const sceneId = String(asset.sceneId ?? "").trim();
+
+          return sceneId ? { type: "scene", sceneId } : null;
+        }
+
+        if (asset && typeof asset === "object" && asset.type === "image") {
+          const src = String(asset.src ?? "").trim();
+
+          return src ? { type: "image", src } : null;
+        }
+
+        return null;
+      })
+      .filter(Boolean)
     : [];
 
   if (!expression || assets.length === 0) {
@@ -1277,6 +1401,16 @@ function createCharacterSourceFiles(characterId, profile) {
   const description = String(profile.description ?? "").trim() || `${displayName} character`;
   const tone = String(profile.tone ?? "").trim() || "차분하고 친근한 말투";
   const lines = createDefaultCharacterLines(displayName);
+  const assets = {
+    alt: displayName,
+    expressions: {},
+    surfaces: {},
+    hitAreas: {
+      head: { minX: 0.2, maxX: 0.8, minY: 0, maxY: 0.35 },
+      face: { minX: 0.22, maxX: 0.78, minY: 0.35, maxY: 0.58 },
+      body: { minX: 0.1, maxX: 0.9, minY: 0.58, maxY: 1 },
+    },
+  };
 
   return {
     profile: `import type { CharacterProfile } from "../../core/types.js";\n\nexport const ${exportName}Profile: CharacterProfile = ${JSON.stringify({
@@ -1287,16 +1421,8 @@ function createCharacterSourceFiles(characterId, profile) {
       defaultExpression: "neutral",
     }, null, 2)};\n`,
     lines: `import type { DialogueLineSet } from "../../core/types.js";\n\nexport const ${exportName}Lines: DialogueLineSet = ${JSON.stringify(lines, null, 2)};\n`,
-    index: `import { ${exportName}Lines } from "./lines.js";\nimport { ${exportName}Profile } from "./profile.js";\nimport type { CharacterDefinition } from "../../core/types.js";\n\nexport const ${exportName}: CharacterDefinition = {\n  profile: ${exportName}Profile,\n  lines: ${exportName}Lines,\n  assets: ${JSON.stringify({
-      alt: displayName,
-      expressions: {},
-      surfaces: {},
-      hitAreas: {
-        head: { minX: 0.2, maxX: 0.8, minY: 0, maxY: 0.35 },
-        face: { minX: 0.22, maxX: 0.78, minY: 0.35, maxY: 0.58 },
-        body: { minX: 0.1, maxX: 0.9, minY: 0.58, maxY: 1 },
-      },
-    }, null, 2)},\n};\n\nexport default ${exportName};\n`,
+    index: createCharacterIndexFile(characterId, { includeTypeImport: true }),
+    assets: createCharacterSourceAssetFiles(characterId, assets),
   };
 }
 
@@ -1306,6 +1432,16 @@ function createCharacterBuildFiles(characterId, profile) {
   const description = String(profile.description ?? "").trim() || `${displayName} character`;
   const tone = String(profile.tone ?? "").trim() || "차분하고 친근한 말투";
   const lines = createDefaultCharacterLines(displayName);
+  const assets = {
+    alt: displayName,
+    expressions: {},
+    surfaces: {},
+    hitAreas: {
+      head: { minX: 0.2, maxX: 0.8, minY: 0, maxY: 0.35 },
+      face: { minX: 0.22, maxX: 0.78, minY: 0.35, maxY: 0.58 },
+      body: { minX: 0.1, maxX: 0.9, minY: 0.58, maxY: 1 },
+    },
+  };
 
   return {
     profile: `export const ${exportName}Profile = ${JSON.stringify({
@@ -1316,16 +1452,8 @@ function createCharacterBuildFiles(characterId, profile) {
       defaultExpression: "neutral",
     }, null, 2)};\n`,
     lines: `export const ${exportName}Lines = ${JSON.stringify(lines, null, 2)};\n`,
-    index: `import { ${exportName}Lines } from "./lines.js";\nimport { ${exportName}Profile } from "./profile.js";\nexport const ${exportName} = {\n  profile: ${exportName}Profile,\n  lines: ${exportName}Lines,\n  assets: ${JSON.stringify({
-      alt: displayName,
-      expressions: {},
-      surfaces: {},
-      hitAreas: {
-        head: { minX: 0.2, maxX: 0.8, minY: 0, maxY: 0.35 },
-        face: { minX: 0.22, maxX: 0.78, minY: 0.35, maxY: 0.58 },
-        body: { minX: 0.1, maxX: 0.9, minY: 0.58, maxY: 1 },
-      },
-    }, null, 2)},\n};\n\nexport default ${exportName};\n`,
+    index: createCharacterIndexFile(characterId, { includeTypeImport: false }),
+    assets: createCharacterBuildAssetFiles(characterId, assets),
   };
 }
 
@@ -1365,11 +1493,20 @@ async function createCharacter(body) {
   await fs.promises.mkdir(path.join(sourceDirectory, "assets", "scenes"), { recursive: true });
   await fs.promises.writeFile(path.join(sourceDirectory, "profile.ts"), sourceFiles.profile, "utf8");
   await fs.promises.writeFile(path.join(sourceDirectory, "lines.ts"), sourceFiles.lines, "utf8");
+  await fs.promises.writeFile(path.join(sourceDirectory, "assets", "meta.ts"), sourceFiles.assets.meta, "utf8");
+  await fs.promises.writeFile(path.join(sourceDirectory, "assets", "expressions.ts"), sourceFiles.assets.expressions, "utf8");
+  await fs.promises.writeFile(path.join(sourceDirectory, "assets", "surfaces.ts"), sourceFiles.assets.surfaces, "utf8");
+  await fs.promises.writeFile(path.join(sourceDirectory, "assets", "scenes.ts"), sourceFiles.assets.scenes, "utf8");
   await fs.promises.writeFile(path.join(sourceDirectory, "index.ts"), sourceFiles.index, "utf8");
 
   await fs.promises.mkdir(buildDirectory, { recursive: true });
+  await fs.promises.mkdir(path.join(buildDirectory, "assets"), { recursive: true });
   await fs.promises.writeFile(path.join(buildDirectory, "profile.js"), buildFiles.profile, "utf8");
   await fs.promises.writeFile(path.join(buildDirectory, "lines.js"), buildFiles.lines, "utf8");
+  await fs.promises.writeFile(path.join(buildDirectory, "assets", "meta.js"), buildFiles.assets.meta, "utf8");
+  await fs.promises.writeFile(path.join(buildDirectory, "assets", "expressions.js"), buildFiles.assets.expressions, "utf8");
+  await fs.promises.writeFile(path.join(buildDirectory, "assets", "surfaces.js"), buildFiles.assets.surfaces, "utf8");
+  await fs.promises.writeFile(path.join(buildDirectory, "assets", "scenes.js"), buildFiles.assets.scenes, "utf8");
   await fs.promises.writeFile(path.join(buildDirectory, "index.js"), buildFiles.index, "utf8");
 
   return {
@@ -2887,7 +3024,7 @@ async function handleSaveAssetFiles(request, response) {
 }
 
 async function handleApiRequest(request, response) {
-  const pathname = new URL(request.url, `http://127.0.0.1:${port}`).pathname;
+  const pathname = stripConfiguredBasePath(new URL(request.url, `http://127.0.0.1:${port}`).pathname);
 
   if (pathname.startsWith("/api/devtools/") && !isCharacterDevtoolsRequestAllowed(request)) {
     sendDevtoolsForbidden(response, request);

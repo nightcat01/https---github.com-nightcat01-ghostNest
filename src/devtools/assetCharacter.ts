@@ -1,4 +1,5 @@
 import { requireElement } from "./assetShared.js";
+import { createDevtoolsApiPath } from "./assetApi.js";
 
 type CreateCharacterResponse = {
   ok?: boolean;
@@ -97,7 +98,7 @@ async function createCharacter() {
   status.textContent = "캐릭터를 만드는 중이에요.";
 
   try {
-    const response = await fetch("/api/devtools/create-character", {
+    const response = await fetch(createDevtoolsApiPath("/api/devtools/create-character"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),

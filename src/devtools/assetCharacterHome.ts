@@ -45,6 +45,7 @@ const workspaceInputs = {
   browserSourcePrefix: requireElement(document.querySelector<HTMLInputElement>("#browserSourcePrefixInput"), "#browserSourcePrefixInput"),
   browserCommonPrefix: requireElement(document.querySelector<HTMLInputElement>("#browserCommonPrefixInput"), "#browserCommonPrefixInput"),
   allowLocalhost: requireElement(document.querySelector<HTMLInputElement>("#allowLocalhostInput"), "#allowLocalhostInput"),
+  devtoolsBasePath: requireElement(document.querySelector<HTMLInputElement>("#devtoolsBasePathInput"), "#devtoolsBasePathInput"),
   allowedIps: requireElement(document.querySelector<HTMLTextAreaElement>("#allowedIpsInput"), "#allowedIpsInput"),
 };
 
@@ -244,6 +245,7 @@ function renderWorkspace(workspace: CharacterWorkspace) {
   workspaceInputs.browserSourcePrefix.value = workspace.browserSourcePrefix;
   workspaceInputs.browserCommonPrefix.value = workspace.browserCommonPrefix;
   workspaceInputs.allowLocalhost.checked = workspace.devServer?.allowLocalhost ?? workspace.allowLocalhost ?? true;
+  workspaceInputs.devtoolsBasePath.value = workspace.devServer?.basePath ?? workspace.basePath ?? "";
   workspaceInputs.allowedIps.value = (workspace.devServer?.allowedIps ?? workspace.allowedIps ?? []).join("\n");
   workspaceResolvedText.textContent = workspace.resolved
     ? `현재 해석된 경로: 캐릭터 ${workspace.resolved.sourceCharacters} / 빌드 ${workspace.resolved.buildCharacters} / 공통 ${workspace.resolved.commonAssets}`
@@ -261,6 +263,7 @@ function readWorkspaceForm(): CharacterWorkspace {
     browserSourcePrefix: workspaceInputs.browserSourcePrefix.value.trim(),
     browserCommonPrefix: workspaceInputs.browserCommonPrefix.value.trim(),
     allowLocalhost: workspaceInputs.allowLocalhost.checked,
+    basePath: workspaceInputs.devtoolsBasePath.value.trim(),
     allowedIps: workspaceInputs.allowedIps.value
       .split(/\r?\n|,/)
       .map((ip) => ip.trim())

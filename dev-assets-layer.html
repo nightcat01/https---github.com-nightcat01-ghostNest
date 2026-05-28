@@ -18,7 +18,7 @@
 
       <nav class="asset-tool-nav" aria-label="Character setting pages" data-character-nav data-current-page="layer"></nav>
 
-      <section class="asset-lab-grid" aria-label="Layer config tool">
+      <section class="asset-lab-grid asset-layer-tool-grid" aria-label="Layer config tool">
         <section class="asset-lab-panel">
           <div class="asset-lab-section asset-step-intro">
             <h2>이 단계에서 하는 일</h2>
@@ -100,18 +100,11 @@
             </label>
           </div>
 
-          <div class="asset-lab-section asset-composition-save-section" id="layerStorageSection" hidden>
+          <div class="asset-lab-section asset-layer-storage-section" id="layerStorageSection" hidden>
             <div class="asset-lab-section-header">
               <div>
-                <h2>저장 설정</h2>
-                <p class="asset-lab-help">이미지는 base 또는 parts 폴더에 저장하고, 선택한 캐릭터 상태의 layers 항목에 연결합니다.</p>
-              </div>
-              <div class="asset-lab-actions">
-                <button type="button" id="saveLayerConfigButton">파츠 저장</button>
-                <button type="button" id="deleteLayerConfigButton" disabled>파츠 삭제</button>
-                <button type="button" id="copyManifestButton">Manifest 복사</button>
-                <button type="button" id="copyLayerButton">Layer 복사</button>
-                <a class="asset-primary-link" href="./dev-character-scene.html">다음: 배경 / 소품 배치</a>
+                <h2>저장 경로</h2>
+                <p class="asset-lab-help">이미지를 저장하거나 불러올 폴더입니다. 파츠 저장은 오른쪽 현재 설정 패널에서 합니다.</p>
               </div>
             </div>
             <label>
@@ -119,6 +112,7 @@
               <select id="assetSaveKindSelect">
                 <option value="parts">parts - 파츠 이미지</option>
                 <option value="base">base - 기본 이미지</option>
+                <option value="scenes">scenes - 배경 / scene 이미지</option>
               </select>
             </label>
             <label>
@@ -129,7 +123,6 @@
               프로젝트 저장 경로
               <input id="saveDirectoryInput" type="text" value="src/characters/rine/assets/parts" autocomplete="off" />
             </label>
-            <p class="asset-lab-status" id="layerStatus" role="status">파츠를 만들 준비가 되었어요.</p>
           </div>
         </section>
 
@@ -160,7 +153,7 @@
                 <input id="partImagesInput" type="file" accept="image/*" multiple />
               </label>
               <div class="asset-lab-actions asset-upload-actions">
-                <button type="button" id="uploadPartAssetsButton">parts에 저장</button>
+                <button type="button" id="uploadPartAssetsButton">선택 폴더에 저장</button>
               </div>
               <label>
                 저장된 파츠 이미지
@@ -204,11 +197,17 @@
                 <button type="button" id="previewZoomOutButton">축소</button>
                 <label>
                   크기
-                  <input id="previewSizeInput" type="range" min="320" max="1200" step="20" value="680" />
+                  <input id="previewSizeInput" type="range" min="480" max="1400" step="20" value="760" />
                 </label>
                 <button type="button" id="previewZoomInButton">확대</button>
               </div>
               <dl id="layerSummary"></dl>
+              <div class="asset-layer-save-actions">
+                <button type="button" id="saveLayerConfigButton">파츠 저장</button>
+                <button class="asset-danger-button" type="button" id="deleteLayerConfigButton" disabled>파츠 삭제</button>
+                <a class="asset-primary-link" href="./dev-character-scene.html">다음: 배경 / 소품 배치</a>
+              </div>
+              <p class="asset-lab-status" id="layerStatus" role="status">파츠를 만들 준비가 되었어요.</p>
             </aside>
           </div>
           <p class="asset-lab-note">
@@ -223,12 +222,14 @@
               <section class="asset-output-block">
                 <div class="asset-output-block-header">
                   <h2>Manifest Patch</h2>
+                  <button type="button" id="copyManifestButton">Manifest 복사</button>
                 </div>
                 <pre id="manifestOutput" aria-live="polite"></pre>
               </section>
               <section class="asset-output-block">
                 <div class="asset-output-block-header">
                   <h2>Layer Snippet</h2>
+                  <button type="button" id="copyLayerButton">Snippet 복사</button>
                 </div>
                 <pre id="layerSnippetOutput" aria-live="polite"></pre>
               </section>

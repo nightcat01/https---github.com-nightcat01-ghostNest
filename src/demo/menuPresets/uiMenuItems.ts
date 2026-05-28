@@ -1,5 +1,32 @@
 import type { ManagementMenuItem } from "../../core/types.js";
 
+const compactSpeechSize = {
+  stageWidth: "min(320px, calc(var(--runtime-area-width, 320px) - 48px))",
+  maxWidth: "100%",
+  maxHeight: "160px",
+  dialogueWidth: "min(100%, calc(var(--runtime-area-width, 420px) - 48px))",
+  dialogueMaxWidth: "420px",
+  dialogueHeight: "150px",
+  dialogueMaxHeight: "180px",
+  actionMenuMaxHeight: "96px",
+};
+
+const wideSpeechSize = {
+  stageWidth: "min(560px, calc(var(--runtime-area-width, 560px) - 48px))",
+  maxWidth: "100%",
+  maxHeight: "min(340px, var(--floating-content-max-height, 340px))",
+  dialogueWidth: "min(100%, calc(var(--runtime-area-width, 760px) - 48px))",
+  dialogueMaxWidth: "760px",
+  dialogueHeight: "min(34vh, 300px)",
+  dialogueMaxHeight: "min(38vh, calc(var(--runtime-area-height, 720px) - var(--character-sprite-height, 390px) - 72px))",
+};
+
+const overflowTestText = [
+  "긴 대사와 많은 메뉴가 들어와도 대사창은 런타임 실행 영역 안에서만 움직여야 해요.",
+  "캐릭터가 위아래로 크게 밀리거나, 화면 밖으로 사라지거나, 말풍선이 끝없이 늘어나면 안 돼요.",
+  "이 문장은 개발자가 overflow, scroll, max-height, width 제한을 한 번에 확인할 수 있도록 일부러 길게 만들었어요.",
+].join("\n");
+
 /**
  * Creates demo menu items for user-facing UI preferences.
  */
@@ -69,6 +96,74 @@ export function createUiMenuItems(): ManagementMenuItem[] {
             { type: "change_balloon_font_size", size: "large" },
             { type: "speak_text", text: "글씨를 조금 크게 만들었어요." },
             { type: "log", label: "management.balloon_font_size.large" },
+          ],
+        },
+      ],
+    },
+    {
+      id: "speech-layout",
+      label: "대사창 배치",
+      description: "캐릭터 대사를 기존 말풍선처럼 띄울지, 게임식 대사창으로 띄울지 고를 수 있어요.",
+      children: [
+        {
+          id: "speech-layout-floating",
+          label: "기본 말풍선",
+          actions: [
+            { type: "change_speech_layout", mode: "floating", placement: "below-character" },
+            { type: "speak_text", text: "대사를 기존 말풍선 방식으로 보여줄게요." },
+            { type: "log", label: "management.speech_layout.floating" },
+          ],
+        },
+        {
+          id: "speech-layout-dialogue-below",
+          label: "하단 대사창",
+          actions: [
+            { type: "change_speech_layout", mode: "dialogue-box", placement: "below-character" },
+            { type: "speak_text", text: "대사를 캐릭터 아래의 대사창으로 보여줄게요." },
+            { type: "log", label: "management.speech_layout.dialogue_below" },
+          ],
+        },
+        {
+          id: "speech-layout-dialogue-overlay",
+          label: "겹치는 대사창",
+          actions: [
+            { type: "change_speech_layout", mode: "dialogue-box", placement: "overlay-bottom" },
+            { type: "speak_text", text: "대사창을 캐릭터 아래쪽에 살짝 겹쳐서 보여줄게요." },
+            { type: "log", label: "management.speech_layout.dialogue_overlay" },
+          ],
+        },
+      ],
+    },
+    {
+      id: "speech-size",
+      label: "대사창 크기",
+      description: "런타임 실행 영역 기준으로 말풍선과 대사창 크기 제한을 테스트해요.",
+      children: [
+        {
+          id: "speech-size-default",
+          label: "기본",
+          actions: [
+            { type: "set_speech_balloon_size", reset: true },
+            { type: "speak_text", text: "대사창 크기를 런타임 영역 기준 기본값으로 돌렸어요." },
+            { type: "log", label: "management.speech_size.default" },
+          ],
+        },
+        {
+          id: "speech-size-compact",
+          label: "좁게",
+          actions: [
+            { type: "set_speech_balloon_size", size: compactSpeechSize },
+            { type: "speak_text", text: overflowTestText },
+            { type: "log", label: "management.speech_size.compact" },
+          ],
+        },
+        {
+          id: "speech-size-wide",
+          label: "넓게",
+          actions: [
+            { type: "set_speech_balloon_size", size: wideSpeechSize },
+            { type: "speak_text", text: overflowTestText },
+            { type: "log", label: "management.speech_size.wide" },
           ],
         },
       ],
